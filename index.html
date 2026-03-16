@@ -582,10 +582,14 @@ function _exposeToWindow() {
   window._F_SET            = (f) => { F = f; };
   window._S_SET            = (s) => { S = s; };
   window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; };
-  window._GET_FILTER_PLT   = () => FILTER_PLT;
-  window._GET_FILTER_STATUS= () => FILTER_STATUS;
-  window._GET_FILTER_STUDIO= () => FILTER_STUDIO;
-  window._GET_FILTER_YEAR  = () => FILTER_YEAR;
+  window._GET_FILTER_PLT      = () => FILTER_PLT;
+  window._GET_FILTER_STATUS   = () => FILTER_STATUS;
+  window._GET_FILTER_STUDIO   = () => FILTER_STUDIO;
+  window._GET_FILTER_YEAR     = () => FILTER_YEAR;
+  window._GET_FILTER_VPN      = () => FILTER_VPN;
+  window._GET_FILTER_SUBTITLE = () => FILTER_SUBTITLE;
+  // onFilterChange・resetAllFilters・toggleDropdownはすでにwindow登録済み
+  // FILTER_VPN/SUBTITLEはmodule内変数なので直接参照可能
 }
 
 // ── UI HELPERS ─────────────────────────────────────────────────────────

@@ -517,29 +517,83 @@ function showToast(msg, type='ok') {
 }
 
 // ── FILTER / SORT STATE ────────────────────────────────────────────────
-let V='g', Y='all', F='a', Q='', S='new', REL='', PLT='', STATUS_F='';
+let V='g', F='a', Q='', S='new';
+// カード表示モード: 'search'=作品を探す / 'mylist'=マイリスト / 'cory'=Coryの視聴リスト
+let CARD_MODE = 'search';
+// 複数選択フィルター（配列）
+let FILTER_PLT    = [];  // 配信媒体
+let FILTER_STATUS = [];  // 放送ステータス
+let FILTER_STUDIO = [];  // 制作会社
+let FILTER_YEAR   = [];  // 放送年
 let openModalId = null;
 
 window.setView = v => {
   V=v; ['vg','vl'].forEach(id=>document.getElementById(id)?.classList.toggle('active',id==='v'+v)); render();
 };
-window.setF = f => {
-  F=f;
-  ['fa','fr','ft','fw','ffav'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
-  document.getElementById({a:'fa',r:'fr',t:'ft',w:'fw',fav:'ffav'}[f])?.classList.add('active');
+// 後方互換性のためsetF/setStatusFも残す
+window.setF = f => { F=f; render(); };
+
+// 複数選択ドロップダウンの開閉
+window.toggleDropdown = function(id) {
+  document.querySelectorAll('.multi-dropdown').forEach(el => {
+    if (el.id !== id) el.classList.remove('open');
+  });
+  document.getElementById(id)?.classList.toggle('open');
+};
+// ドロップダウン外クリックで閉じる
+document.addEventListener('click', e => {
+  if (!e.target.closest('.multi-select-wrap')) {
+    document.querySelectorAll('.multi-dropdown').forEach(el => el.classList.remove('open'));
+  }
+});
+// チェックボックスの変更
+window.onFilterChange = function(type, val, checked) {
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR };
+  const arr = map[type];
+  if (checked) { if (!arr.includes(val)) arr.push(val); }
+  else { const i = arr.indexOf(val); if (i>=0) arr.splice(i,1); }
+  updateFilterBtnLabel(type);
+  renderFilterTags();
   render();
 };
-window.setStatusF = s => {
-  STATUS_F = STATUS_F === s ? '' : s;
-  document.querySelectorAll('.status-btn').forEach(el => el.classList.toggle('active', el.dataset.s === STATUS_F));
+// ボタンラベルを選択数に応じて更新
+function updateFilterBtnLabel(type) {
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR };
+  const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年' };
+  const arr = map[type];
+  const btn = document.getElementById('fbtn-' + type);
+  if (!btn) return;
+  btn.textContent = arr.length > 0 ? labels[type] + ' (' + arr.length + ') ▾' : labels[type] + ' ▾';
+  btn.classList.toggle('has-filter', arr.length > 0);
+}
+// 選択中フィルタータグを表示
+function renderFilterTags() {
+  const wrap = document.getElementById('filter-tags');
+  if (!wrap) return;
+  const all = [
+    ...FILTER_PLT.map(v => ({type:'plt', val:v})),
+    ...FILTER_STATUS.map(v => ({type:'status', val:v})),
+    ...FILTER_STUDIO.map(v => ({type:'studio', val:v})),
+    ...FILTER_YEAR.map(v => ({type:'year', val:v})),
+  ];
+  wrap.innerHTML = all.map(({type, val}) =>
+    `<span class="ftag" onclick="onFilterChange('${type}','${val}',false)">${val} ✕</span>`
+  ).join('');
+}
+// フィルターを全リセット
+window.resetAllFilters = function() {
+  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[];
+  ['plt','status','studio','year'].forEach(t => {
+    updateFilterBtnLabel(t);
+    document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
+  });
+  renderFilterTags();
   render();
 };
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('q').addEventListener('input', e=>{Q=e.target.value;render();});
   document.getElementById('srt').addEventListener('change', e=>{S=e.target.value;render();});
-  document.getElementById('rel').addEventListener('change', e=>{REL=e.target.value;render();});
-  document.getElementById('plt').addEventListener('change', e=>{PLT=e.target.value;render();});
   buildYearTabs();
   const c = document.getElementById('petals');
   for(let i=0;i<18;i++){const p=document.createElement('div');p.className='petal';p.style.cssText=`left:${Math.random()*100}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*8}s;opacity:${.1+Math.random()*.25};transform:scale(${.5+Math.random()})`;c.appendChild(p);}
@@ -550,22 +604,34 @@ function go() {
   let l = [...localDramas];
   if (Y !== 'all') l = l.filter(d => d.year === Y);
   if (STATUS_F) l = l.filter(d => calcStatus(d) === STATUS_F);
-  if (F==='r')    l = l.filter(d => d.rate > 0);
-  if (F==='t')    l = l.filter(d => d.recommend >= 5);
-  if (F==='w')    l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
-  if (F==='fav')  l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
+  // マイリストフィルター
+  if (F==='w')   l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
+  if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 
-  if (REL) l = l.filter(d => d.relation === REL);
-  if (PLT) l = l.filter(d => {
-    if (d.platforms && d.platforms.length) return d.platforms.some(p => p.platform === PLT);
-    return (d.platform||'').includes(PLT);
-  });
+  // 複数選択フィルター（OR条件：どれか一つに一致すれば表示）
+  if (FILTER_PLT.length > 0) {
+    l = l.filter(d => {
+      const plats = d.platforms && d.platforms.length
+        ? d.platforms.map(p => p.platform)
+        : (d.platform||'').split(/[\/,、]/).map(s=>s.trim());
+      return FILTER_PLT.some(v => plats.some(p => p === v));
+    });
+  }
+  if (FILTER_STATUS.length > 0) {
+    l = l.filter(d => FILTER_STATUS.some(v => v === calcStatus(d)));
+  }
+  if (FILTER_STUDIO.length > 0) {
+    l = l.filter(d => FILTER_STUDIO.some(v => v === (d.studio||'')));
+  }
+  if (FILTER_YEAR.length > 0) {
+    l = l.filter(d => FILTER_YEAR.some(v => v === (d.year||'未定')));
+  }
+
   if (Q) { const q=Q.toLowerCase(); l=l.filter(d=>(d.title+d.cp+(d.cp_top||'')+(d.cp_bottom||'')+d.synopsis+d.studio).toLowerCase().includes(q)); }
   l.sort((a,b) => {
     if(S==='new') return (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1;
     if(S==='old') return (a.sort_date||'9999') > (b.sort_date||'9999') ? 1 : -1;
-    if(S==='rhi') return b.rate - a.rate;
-    if(S==='rlo') return a.rate - b.rate;
+    if(S==='urate') return (b.user_rate_avg||0) - (a.user_rate_avg||0);
     if(S==='rec') return b.recommend - a.recommend;
     if(S==='az')  return a.title.localeCompare(b.title);
     return 0;
@@ -583,6 +649,35 @@ function buildYearTabs() {
     t.textContent = y==='all'?'すべて':y+'年'; t.onclick=()=>{Y=y;buildYearTabs();render();};
     wrap.appendChild(t);
   });
+}
+
+// ── ドロップダウン選択肢を動的生成 ───────────────────────────────────
+function buildFilterDropdowns() {
+  // 制作会社リスト（重複なし・空除外）
+  const studios = [...new Set(localDramas.map(d=>d.studio||'').filter(Boolean))].sort();
+  // 放送年リスト
+  const years = [...new Set(localDramas.map(d=>d.year||'未定'))].sort((a,b)=>b.localeCompare(a));
+
+  const makeItems = (type, items) => items.map(v => `
+    <label class="dd-item">
+      <input type="checkbox" value="${v}"
+        ${(type==='plt'?FILTER_PLT:type==='status'?FILTER_STATUS:type==='studio'?FILTER_STUDIO:FILTER_YEAR).includes(v)?'checked':''}
+        onchange="onFilterChange('${type}','${v}',this.checked)">
+      <span>${v}</span>
+    </label>`).join('');
+
+  const platItems = ['Youtube','Netflix','iQIYI','WeTV','Telasa','GagaOOLala','楽天','FOD','DMM','ch3','その他'];
+  const statusItems = ['放送済み','放送中','放送前'];
+
+  const ddPlt    = document.getElementById('dd-plt');
+  const ddStatus = document.getElementById('dd-status');
+  const ddStudio = document.getElementById('dd-studio');
+  const ddYear   = document.getElementById('dd-year');
+
+  if (ddPlt)    ddPlt.innerHTML    = makeItems('plt', platItems);
+  if (ddStatus) ddStatus.innerHTML = makeItems('status', statusItems);
+  if (ddStudio) ddStudio.innerHTML = makeItems('studio', studios);
+  if (ddYear)   ddYear.innerHTML   = makeItems('year', years);
 }
 
 function strs(n, mx=5) { let h=''; for(let i=1;i<=mx;i++) h+=`<span class="star${i<=n?' on':''}">${i<=n?'★':'☆'}</span>`; return h; }
@@ -612,31 +707,50 @@ function platDisplay(d) {
 }
 
 function card(d, listMode) {
-  // ── 基本データの準備 ──────────────────────────────────────────────────
+  // ── 基本データ ────────────────────────────────────────────────────────
   const id     = String(d._id || d.title);
   const ud     = userDoc.dramas?.[id] || {};
   const sub    = d.is_subcap === 'BLサブカプ';
   const status = calcStatus(d);
-  const isUp   = status === '放送前';   // 放送前フラグ
+  const isUp   = status === '放送前';
   const cp     = (d.cp || '').split(/\n/).filter(Boolean).join(' / ');
   const year   = (d.release_start || d.release || '─').slice(0, 7);
+  const stCls  = status === '放送済み' ? 'done' : status === '放送中' ? 'now' : 'pre';
+  const mode   = CARD_MODE || 'search';
 
   // ── CSSクラス ─────────────────────────────────────────────────────────
   const cls = [
     'card',
-    isUp ? 'upcoming' : (!d.rate && !d.recommend ? 'no-info' : ''),
+    isUp ? 'upcoming' : (!d.recommend ? 'no-info' : ''),
     ud.status === '視聴済み' ? 'is-watched' : '',
   ].filter(Boolean).join(' ');
 
-  // ── ステータスタグの色クラス ──────────────────────────────────────────
-  const stCls = status === '放送済み' ? 'done' : status === '放送中' ? 'now' : 'pre';
+  // ── バッジ ────────────────────────────────────────────────────────────
+  const subBadge     = sub    ? `<span class="slabel">BLサブカプ</span>` : '';
+  const watchedBadge = ud.status === '視聴済み' ? `<span class="wlabel">視聴済</span>` : '';
+  const upBadge      = isUp   ? `<span class="utag">予定</span>` : '';
 
-  // ── 関係値タグ ────────────────────────────────────────────────────────
-  const relTag = (d.relation && d.relation !== '?' && d.relation !== '？')
-    ? `<span class="tag tr">${d.relation}</span>` : '';
+  // ── モード別の追加表示 ────────────────────────────────────────────────
+  // 作品を探す：ユーザー平均評価
+  const userAvgHtml = (mode === 'search' && d.user_rate_avg)
+    ? `<div class="user-avg-rate">👥 ★${d.user_rate_avg} <span class="urate-count">(${d.user_rate_count || 0}件)</span></div>`
+    : '';
 
-  // ── ユーザー操作ボタン ────────────────────────────────────────────────
-  const userBtns = currentUser ? `
+  // マイリスト：自分の評価・メモ
+  const myRateHtml = (mode === 'mylist' && ud.rate)
+    ? `<div class="user-avg-rate">⭐ 自分の評価: ${ud.rate}</div>`
+    : '';
+  const myMemoHtml = (mode === 'mylist' && ud.memo)
+    ? `<div class="csyno" style="border-left:2px solid var(--lav);padding-left:7px;margin-top:5px">${ud.memo}</div>`
+    : '';
+
+  // Coryの視聴リスト：おすすめ度（星）
+  const coryRateHtml = (mode === 'cory' && d.recommend)
+    ? `<div class="crating"><div class="stars">${strs(d.recommend)}</div></div>`
+    : '';
+
+  // ステータス変更セレクト（マイリストモード・ログイン時のみ）
+  const userBtns = (mode === 'mylist' && currentUser) ? `
     <select class="status-sel"
       onchange="saveUserStatus('${id}', this.value)"
       onclick="event.stopPropagation()">
@@ -651,38 +765,25 @@ function card(d, listMode) {
          onclick="openAdminEdit('${id}', event)" title="編集">✏</button>`
     : '';
 
-  // ── バッジ類 ──────────────────────────────────────────────────────────
-  const subBadge      = sub              ? `<span class="slabel">BLサブカプ</span>` : '';
-  const watchedBadge  = ud.status === '視聴済み' ? `<span class="wlabel">視聴済</span>` : '';
-  const upBadge       = isUp             ? `<span class="utag">予定</span>`        : '';
-
   // ── リストモード ──────────────────────────────────────────────────────
   if (listMode) {
-    const dots = d.recommend
-      ? `<div class="recdots">
-           ${Array.from({ length: 5 }, (_, i) =>
-             `<div class="rdot${i < d.recommend ? ' on' : ''}"></div>`
-           ).join('')}
-         </div>` : '';
-
     return `
       <div class="${cls}" onclick="openM('${id}')">
         <div class="card-top"></div>
         <div class="cbody list-body">
           <div class="cleft">
-            <div class="cheader">
-              <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
-            </div>
+            <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
             ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
+            ${myMemoHtml}
             <div class="cmeta">
-              ${relTag}
               <span class="tag st-${stCls}">${status}</span>
             </div>
           </div>
           <div class="cright">
             <span class="cyear">${year}</span>
-            ${dots}
-            ${d.rate ? `<div class="ratept">★${d.rate}</div>` : ''}
+            ${coryRateHtml}
+            ${userAvgHtml}
+            ${myRateHtml}
             <div class="card-btns">${userBtns}${adminBtns}</div>
           </div>
         </div>
@@ -695,26 +796,19 @@ function card(d, listMode) {
       <div class="card-top"></div>
       <div class="cbody">
         <div class="cheader">
-          <div class="ctitle">
-            ${d.title}${upBadge}${subBadge}${watchedBadge}
-          </div>
+          <div class="ctitle">${d.title}${upBadge}${subBadge}${watchedBadge}</div>
           <span class="cyear">${year}</span>
         </div>
         ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
         ${d.synopsis && d.synopsis !== '?'
           ? `<div class="csyno">${d.synopsis}</div>` : ''}
         <div class="cmeta">
-          ${relTag}
           <span class="tag st-${stCls}">${status}</span>
-          ${d.duration ? `<span class="tag th">⏱${d.duration}h</span>` : ''}
         </div>
-        ${d.rate || d.recommend ? `
-          <div class="crating">
-            <div class="stars">${strs(d.recommend)}</div>
-            ${d.rate ? `<span class="rpt">★${d.rate}</span>` : ''}
-          </div>` : ''}
-        ${d.comment
-          ? `<div class="ccomment">${d.comment}</div>` : ''}
+        ${coryRateHtml}
+        ${userAvgHtml}
+        ${myRateHtml}
+        ${myMemoHtml}
         <div class="card-btns">${userBtns}${adminBtns}</div>
       </div>
     </div>`;
@@ -733,6 +827,7 @@ function render() {
     if(sr){sr.innerHTML=`<span class="stag">✓ 視聴済み ${wc}件</span>`;sr.style.display='flex';}
   }
   buildYearTabs();
+  buildFilterDropdowns();
   updateSidebarState();
   const g=document.getElementById('grid'), em=document.getElementById('empty');
   if (!l.length) { g.style.display='none'; em.style.display='block'; return; }
@@ -997,6 +1092,9 @@ select option{background:var(--dark2);}
   border-left:3px solid var(--rose);border-radius:0 5px 5px 0;font-size:11px;
   color:#d4a8b8;line-height:1.5;font-style:italic;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+/* ユーザー平均評価 */
+.user-avg-rate{margin-top:6px;font-size:11px;color:var(--ll);display:flex;align-items:center;gap:4px;}
+.urate-count{font-size:10px;color:var(--muted);}
 .slabel{background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);color:var(--gold);
   padding:1px 5px;border-radius:7px;font-size:9px;margin-left:4px;}
 .utag{margin-left:4px;font-size:9px;color:var(--ll);background:rgba(155,126,200,.1);padding:1px 5px;border-radius:7px;}
@@ -1168,6 +1266,35 @@ textarea:focus{border-color:var(--lav);}
   border-radius:8px;padding:9px 16px;color:var(--muted);cursor:pointer;font-size:13px;
   font-family:'Noto Sans JP',sans-serif;}
 .rate-hint{font-size:10px;color:var(--muted);margin-top:2px;}
+
+/* ── 複数選択フィルター ─────────────────────────────────────── */
+.filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  max-width:1400px;margin:0 auto;padding:8px 14px 10px;}
+.multi-select-wrap{position:relative;}
+.filter-btn{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);
+  border-radius:8px;padding:6px 12px;color:var(--muted);cursor:pointer;font-size:12px;
+  font-family:'Noto Sans JP',sans-serif;transition:all .2s;white-space:nowrap;}
+.filter-btn:hover,.filter-btn.has-filter{background:rgba(232,84,122,.15);
+  border-color:var(--rose);color:var(--rl);}
+.multi-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;
+  background:var(--dark2);border:1px solid rgba(155,126,200,.3);border-radius:10px;
+  padding:8px 4px;min-width:140px;max-height:220px;overflow-y:auto;z-index:500;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.multi-dropdown.open{display:block;}
+.dd-item{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;
+  font-size:13px;color:var(--muted);transition:background .15s;border-radius:6px;}
+.dd-item:hover{background:rgba(155,126,200,.1);color:var(--text);}
+.dd-item input[type=checkbox]{accent-color:var(--rose);width:14px;height:14px;cursor:pointer;}
+.dd-item span{cursor:pointer;}
+.ftag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;
+  background:rgba(232,84,122,.12);border:1px solid rgba(232,84,122,.25);
+  border-radius:20px;font-size:11px;color:var(--rl);cursor:pointer;transition:all .2s;}
+.ftag:hover{background:rgba(232,84,122,.25);}
+#filter-tags{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}
+.reset-btn{background:none;border:1px solid rgba(155,126,200,.15);border-radius:8px;
+  padding:4px 10px;color:rgba(155,126,200,.5);cursor:pointer;font-size:11px;
+  font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+.reset-btn:hover{border-color:rgba(155,126,200,.4);color:var(--muted);}
 
 .toast{position:fixed;bottom:24px;right:24px;z-index:9999;
   background:rgba(40,25,55,.95);border:1px solid rgba(155,126,200,.3);
@@ -1574,47 +1701,49 @@ textarea:focus{border-color:var(--lav);}
 
 <div class="controls">
   <div class="ctrl-row">
+    <!-- 自由検索 -->
     <div class="srch"><input type="text" id="q" placeholder="タイトル・CP・あらすじで検索..."></div>
+    <!-- 並び替え -->
     <select id="srt">
-      <option value="new">新しい順</option><option value="old">古い順</option>
-      <option value="rhi">評価高い順</option><option value="rlo">評価低い順</option>
-      <option value="rec">オススメ順</option><option value="az">タイトル順</option>
+      <option value="new">新しい順</option>
+      <option value="urate">みんなの評価が高い順</option>
+      <option value="rec">Coryのおすすめ順</option>
+      <option value="az">タイトル順</option>
     </select>
-    <select id="rel">
-      <option value="">関係値すべて</option>
-      <option value="先輩後輩">先輩後輩</option><option value="同い年">同い年</option>
-      <option value="歳の差">歳の差</option><option value="同世代">同世代</option><option value="関係なし">関係なし</option>
-    </select>
-    <select id="plt">
-      <option value="">配信すべて</option>
-      <option value="Youtube">YouTube</option><option value="Netflix">Netflix</option>
-      <option value="iQIYI">iQIYI</option><option value="WeTV">WeTV</option>
-      <option value="Telasa">Telasa</option><option value="GagaOOLala">GagaOOLala</option>
-      <option value="楽天">楽天</option><option value="FOD">FOD</option>
-    </select>
+    <!-- グリッド/リスト切り替え -->
     <div class="btn-grp">
       <button class="btn active" id="vg" onclick="setView('g')">⊞</button>
       <button class="btn" id="vl" onclick="setView('l')">☰</button>
     </div>
-    <div class="btn-grp">
-      <button class="btn active" id="fa" onclick="setF('a')">全部</button>
-      <button class="btn" id="fr" onclick="setF('r')">評価あり</button>
-      <button class="btn" id="ft" onclick="setF('t')">★5のみ</button>
-      <button class="btn" id="fw" onclick="setF('w')" style="display:none">✓ 視聴済み</button>
-      <button class="btn" id="ffav" onclick="setF('fav')" style="display:none">▶ 視聴中</button>
-    </div>
     <div class="cnt" id="cnt">- 件</div>
     <button class="admin-add-btn admin-only" onclick="openAdminAdd()" style="display:none">＋ 作品追加</button>
-    <button class="upload-btn admin-only" onclick="uploadBuiltinToFirestore()" style="display:none">⬆ データ移行</button>
   </div>
-</div>
-
-<!-- ステータスフィルターバー -->
-<div class="status-bar">
-  <span class="status-bar-label">放送：</span>
-  <button class="status-btn" data-s="放送済み" onclick="setStatusF('放送済み')">放送済み</button>
-  <button class="status-btn" data-s="放送中" onclick="setStatusF('放送中')">放送中</button>
-  <button class="status-btn" data-s="放送前" onclick="setStatusF('放送前')">放送前</button>
+  <!-- フィルター行 -->
+  <div class="filter-row">
+    <!-- 配信媒体 -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-plt" onclick="toggleDropdown('dd-plt')">配信 ▾</button>
+      <div class="multi-dropdown" id="dd-plt"></div>
+    </div>
+    <!-- 放送ステータス -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-status" onclick="toggleDropdown('dd-status')">放送Status ▾</button>
+      <div class="multi-dropdown" id="dd-status"></div>
+    </div>
+    <!-- 制作会社 -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-studio" onclick="toggleDropdown('dd-studio')">制作会社 ▾</button>
+      <div class="multi-dropdown" id="dd-studio"></div>
+    </div>
+    <!-- 放送年 -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-year" onclick="toggleDropdown('dd-year')">放送年 ▾</button>
+      <div class="multi-dropdown" id="dd-year"></div>
+    </div>
+    <!-- 選択中タグ & リセット -->
+    <div id="filter-tags"></div>
+    <button class="reset-btn" onclick="resetAllFilters()">リセット</button>
+  </div>
 </div>
 
 <div class="tabs" id="tabs"></div>
@@ -1820,40 +1949,46 @@ window.sbNav = function(key) {
   document.querySelectorAll('.sb-item').forEach(el => el.classList.remove('active'));
   document.getElementById('sb-' + key)?.classList.add('active');
 
-  // ── 作品を探す → 全作品一覧を表示 ──────────────────────────────────
+  // ── 作品を探す → 全作品一覧・検索モード ────────────────────────────
   if (key === 'all') {
-    STATUS_F = '';
-    setF('a');
+    CARD_MODE = 'search';
+    FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[];
+    F = 'a';
+    S = 'new';
+    const srtEl = document.getElementById('srt');
+    if (srtEl) srtEl.value = 'new';
+    renderFilterTags();
+    ['plt','status','studio','year'].forEach(t => updateFilterBtnLabel(t));
+    render();
   }
 
   // ── マイリスト → ログイン済みなら視聴済み表示・未ログインはログイン促す ──
   if (key === 'mylist') {
     const user = window._currentUser;
     if (user) {
-      STATUS_F = '';
-      setF('w');
+      CARD_MODE = 'mylist';
+      F = 'w';
+      render();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');
-      // ログインボタンを目立たせる
       const btn = document.getElementById('loginBtn');
-      if (btn) { btn.style.animation = 'none'; btn.offsetHeight; btn.style.animation = ''; }
+      if (btn) { btn.style.boxShadow = '0 0 0 2px var(--rose)'; setTimeout(()=>btn.style.boxShadow='',2000); }
     }
   }
 
-  // ── Coryの視聴リスト → 評価の高い順に全作品を表示 ──────────────────
+  // ── Coryの視聴リスト → Cory評価モードで全作品表示 ───────────────────
   if (key === 'cory') {
-    STATUS_F = '';
-    F = 'a';       // フィルターなし（全作品）
-    S = 'rec';     // おすすめ順（高い順）
-    // ソートセレクトボックスも連動して更新
+    CARD_MODE = 'cory';
+    F = 'a';
+    S = 'rec';
     const srtEl = document.getElementById('srt');
     if (srtEl) srtEl.value = 'rec';
     render();
   }
 
-  // ── 管理者：視聴リスト管理 → cory_statusフィルターで表示 ─────────────
+  // ── 管理者：視聴リスト管理 ────────────────────────────────────────────
   if (key === 'admin-cory') {
-    STATUS_F = '';
+    CARD_MODE = 'cory';
     F = 'a';
     S = 'rec';
     const srtEl = document.getElementById('srt');

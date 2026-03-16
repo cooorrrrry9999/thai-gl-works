@@ -123,6 +123,7 @@ async function loadDramasFromDB() {
   render();
 }
 loadDramasFromDB();
+_exposeToWindow(); // module→通常scriptブリッジを登録
 
 // ── USER ACTIONS ───────────────────────────────────────────────────────
 window.saveUserStatus = async (id, status) => {
@@ -400,6 +401,7 @@ window.submitAdminForm = async () => {
     }
     closeAdminModal();
     await loadDramasFromDB();
+_exposeToWindow(); // module→通常scriptブリッジを登録
   } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
 };
 
@@ -413,6 +415,7 @@ window.deleteDrama = async (id, e) => {
     showToast('削除しました');
     closeMD();
     await loadDramasFromDB();
+_exposeToWindow(); // module→通常scriptブリッジを登録
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
 };
 
@@ -486,7 +489,29 @@ window.uploadBuiltinToFirestore = async () => {
   await batch.commit();
   showToast(`${count}件の移行が完了しました ✓`);
   await loadDramasFromDB();
+_exposeToWindow(); // module→通常scriptブリッジを登録
 };
+
+// ── module → 通常script へのブリッジ ─────────────────────────────────
+// 通常scriptから呼べるようwindowに登録
+// （render, renderFilterTags, updateFilterBtnLabel, buildFilterDropdowns）
+// render・setF・setView はすでにwindow.xxxで登録済みのものもあるが
+// 念のためここでまとめて再登録する
+function _exposeToWindow() {
+  window.render            = render;
+  window.renderFilterTags  = renderFilterTags;
+  window.updateFilterBtnLabel = updateFilterBtnLabel;
+  window.buildFilterDropdowns = buildFilterDropdowns;
+  window.updateModeBar     = typeof updateModeBar === 'function' ? updateModeBar : ()=>{};
+  window._CARD_MODE_SET    = (m) => { CARD_MODE = m; };
+  window._F_SET            = (f) => { F = f; };
+  window._S_SET            = (s) => { S = s; };
+  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; };
+  window._GET_FILTER_PLT   = () => FILTER_PLT;
+  window._GET_FILTER_STATUS= () => FILTER_STATUS;
+  window._GET_FILTER_STUDIO= () => FILTER_STUDIO;
+  window._GET_FILTER_YEAR  = () => FILTER_YEAR;
+}
 
 // ── UI HELPERS ─────────────────────────────────────────────────────────
 function updateAuthUI() {
@@ -808,18 +833,18 @@ function card(d, listMode) {
 
 function render() {
   const l = go();
-  document.getElementById('cnt').textContent = l.length + ' 件';
-  document.getElementById('sTotal').textContent = localDramas.length;
-  document.getElementById('sRated').textContent = localDramas.filter(d=>d.rate>0).length;
-  document.getElementById('sTop').textContent = localDramas.filter(d=>d.recommend>=5).length;
-  document.getElementById('sUpcoming').textContent = localDramas.filter(d=>calcStatus(d)==='放送前').length;
+  // null チェック付きで安全にセット
+  const setTxt = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  setTxt('cnt', l.length + ' 件');
+  setTxt('sTotal', localDramas.length);
   if (currentUser) {
     const wc = Object.values(userDoc.dramas||{}).filter(v=>v.status==='視聴済み').length;
     const sr = document.getElementById('statsRow');
     if(sr){sr.innerHTML=`<span class="stag">✓ 視聴済み ${wc}件</span>`;sr.style.display='flex';}
   }
   buildFilterDropdowns();
-  updateSidebarState();
+  // updateSidebarState は通常scriptにあるため window 経由で呼ぶ
+  if (typeof window.updateSidebarState === 'function') window.updateSidebarState();
   const g=document.getElementById('grid'), em=document.getElementById('empty');
   if (!l.length) { g.style.display='none'; em.style.display='block'; return; }
   g.style.display=''; em.style.display='none';
@@ -1970,29 +1995,29 @@ window.sbNav = function(key) {
   document.querySelectorAll('.sb-item').forEach(el => el.classList.remove('active'));
   document.getElementById('sb-' + key)?.classList.add('active');
 
-  // モードバー更新
-  updateModeBar(key);
+  // モードバー更新（windowブリッジ経由）
+  if (typeof window.updateModeBar === 'function') window.updateModeBar(key);
 
-  // ── 作品を探す → 全作品一覧・検索モード ────────────────────────────
+  // ── 作品を探す ────────────────────────────────────────────────────────
   if (key === 'all') {
-    CARD_MODE = 'search';
-    FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[];
-    F = 'a';
-    S = 'new';
+    window._CARD_MODE_SET?.('search');
+    window._FILTER_RESET?.();
+    window._F_SET?.('a');
+    window._S_SET?.('new');
     const srtEl = document.getElementById('srt');
     if (srtEl) srtEl.value = 'new';
-    renderFilterTags();
-    ['plt','status','studio','year'].forEach(t => updateFilterBtnLabel(t));
-    render();
+    window.renderFilterTags?.();
+    ['plt','status','studio','year'].forEach(t => window.updateFilterBtnLabel?.(t));
+    window.render?.();
   }
 
-  // ── マイリスト → ログイン済みなら視聴済み表示・未ログインはログイン促す ──
+  // ── マイリスト ────────────────────────────────────────────────────────
   if (key === 'mylist') {
     const user = window._currentUser;
     if (user) {
-      CARD_MODE = 'mylist';
-      F = 'w';
-      render();
+      window._CARD_MODE_SET?.('mylist');
+      window._F_SET?.('w');
+      window.render?.();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');
       const btn = document.getElementById('loginBtn');
@@ -2000,24 +2025,24 @@ window.sbNav = function(key) {
     }
   }
 
-  // ── Coryの視聴リスト → Cory評価モードで全作品表示 ───────────────────
+  // ── Coryの視聴リスト ──────────────────────────────────────────────────
   if (key === 'cory') {
-    CARD_MODE = 'cory';
-    F = 'a';
-    S = 'rec';
+    window._CARD_MODE_SET?.('cory');
+    window._F_SET?.('a');
+    window._S_SET?.('rec');
     const srtEl = document.getElementById('srt');
     if (srtEl) srtEl.value = 'rec';
-    render();
+    window.render?.();
   }
 
   // ── 管理者：視聴リスト管理 ────────────────────────────────────────────
   if (key === 'admin-cory') {
-    CARD_MODE = 'cory';
-    F = 'a';
-    S = 'rec';
+    window._CARD_MODE_SET?.('cory');
+    window._F_SET?.('a');
+    window._S_SET?.('rec');
     const srtEl = document.getElementById('srt');
     if (srtEl) srtEl.value = 'rec';
-    render();
+    window.render?.();
   }
 
   // スクロールをトップに
@@ -2047,7 +2072,7 @@ function highlightStatusBtn(s) {
 }
 
 // サイドバーのカウント・状態をrenderに連動して更新
-function updateSidebarState() {
+window.updateSidebarState = function updateSidebarState() {
   // 視聴済みカウント
   const doc = window._userDoc || { dramas: {} };
   const wc = Object.values(doc.dramas||{}).filter(v => v.status === '視聴済み').length;

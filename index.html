@@ -174,7 +174,7 @@ window.logout = async () => {
 
 onAuthStateChanged(auth, async user => {
   currentUser = user;
-  window._currentUser = user; // 通常scriptから参照できるよう同期
+  window._currentUser = user;
   isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   updateAuthUI();
   if (user) {
@@ -182,15 +182,18 @@ onAuthStateChanged(auth, async user => {
     showUserFilters(true);
   } else {
     userDoc = { dramas: {} };
+    window._userDoc = userDoc;
     showUserFilters(false);
   }
-  // render()はmodule scriptの関数。window経由で安全に呼ぶ
-  if (typeof render === 'function') render();
-  else if (typeof window.render === 'function') window.render();
-  // admin-only要素の表示制御（サイドバー含む）
+  // admin-only要素の表示制御
   document.querySelectorAll('.admin-only').forEach(el => {
     el.style.display = isAdmin ? '' : 'none';
   });
+  // データがすでに読み込まれている場合のみrenderを呼ぶ
+  // （データ取得前にrenderするとカードが消えるのを防ぐ）
+  if (localDramas.length > 0) {
+    if (typeof render === 'function') render();
+  }
 });
 
 async function loadUserDoc(uid) {

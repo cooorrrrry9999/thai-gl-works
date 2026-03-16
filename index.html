@@ -71,6 +71,7 @@ function renderSettingsSections() {
   const sections = [
     { key: 'platforms', label: '配信媒体',  arr: PLATFORM_OPTIONS },
     { key: 'vpn',       label: 'VPN',       arr: VPN_OPTIONS },
+    { key: 'subtitles', label: '字幕',       arr: SUBTITLE_OPTIONS },
     { key: 'relation',  label: '関係値',    arr: RELATION_OPTIONS },
     // 必要に応じて以下のコメントを外すと追加できます
     // { key: 'subtitles', label: '字幕',      arr: SUBTITLE_OPTIONS },
@@ -575,7 +576,7 @@ function _exposeToWindow() {
   window._CARD_MODE_SET    = (m) => { CARD_MODE = m; };
   window._F_SET            = (f) => { F = f; };
   window._S_SET            = (s) => { S = s; };
-  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; };
+  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; };
   window._GET_FILTER_PLT   = () => FILTER_PLT;
   window._GET_FILTER_STATUS= () => FILTER_STATUS;
   window._GET_FILTER_STUDIO= () => FILTER_STUDIO;
@@ -619,7 +620,8 @@ let FILTER_PLT    = [];  // 配信媒体
 let FILTER_STATUS = [];  // 放送ステータス
 let FILTER_STUDIO = [];  // 制作会社
 let FILTER_YEAR   = [];  // 放送年
-let FILTER_VPN    = [];  // VPN
+let FILTER_VPN      = [];  // VPN
+let FILTER_SUBTITLE = [];  // 字幕
 let openModalId = null;
 
 window.setView = v => {
@@ -643,7 +645,7 @@ document.addEventListener('click', e => {
 });
 // チェックボックスの変更
 window.onFilterChange = function(type, val, checked) {
-  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN };
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
   const arr = map[type];
   if (checked) { if (!arr.includes(val)) arr.push(val); }
   else { const i = arr.indexOf(val); if (i>=0) arr.splice(i,1); }
@@ -653,7 +655,7 @@ window.onFilterChange = function(type, val, checked) {
 };
 // ボタンラベルを選択数に応じて更新
 function updateFilterBtnLabel(type) {
-  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN };
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
   const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年' };
   const arr = map[type];
   const btn = document.getElementById('fbtn-' + type);
@@ -671,6 +673,7 @@ function renderFilterTags() {
     ...FILTER_STUDIO.map(v => ({type:'studio', val:v})),
     ...FILTER_YEAR.map(v => ({type:'year', val:v})),
     ...FILTER_VPN.map(v => ({type:'vpn', val:v})),
+    ...FILTER_SUBTITLE.map(v => ({type:'subtitle', val:v})),
   ];
   wrap.innerHTML = all.map(({type, val}) =>
     `<span class="ftag" onclick="onFilterChange('${type}','${val}',false)">${val} ✕</span>`
@@ -678,8 +681,8 @@ function renderFilterTags() {
 }
 // フィルターを全リセット
 window.resetAllFilters = function() {
-  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[];
-  ['plt','status','studio','year','vpn'].forEach(t => {
+  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[];
+  ['plt','status','studio','year','vpn','subtitle'].forEach(t => {
     updateFilterBtnLabel(t);
     document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
   });
@@ -721,11 +724,18 @@ function go() {
   }
   if (FILTER_VPN.length > 0) {
     l = l.filter(d => {
-      // platforms配列からVPN情報を取得
       const vpns = d.platforms && d.platforms.length
-        ? d.platforms.map(p => p.vpn || '不要')
-        : [(d.vpn === 'あり' ? '要（日本）' : '不要')];
+        ? d.platforms.map(p => p.vpn || '不要(日本)')
+        : [(d.vpn === 'あり' ? '要(日本以外)' : '不要(日本)')];
       return FILTER_VPN.some(v => vpns.some(pv => pv === v));
+    });
+  }
+  if (FILTER_SUBTITLE.length > 0) {
+    l = l.filter(d => {
+      const subs = d.platforms && d.platforms.length
+        ? d.platforms.map(p => p.subtitle || '')
+        : [(d.subtitle || '')];
+      return FILTER_SUBTITLE.some(v => subs.some(s => s === v));
     });
   }
 
@@ -739,8 +749,10 @@ function go() {
       const ub = userDoc.dramas?.[String(b._id||b.title)]?.rate || 0;
       return ub - ua;
     }
-    if(S==='rec') return b.recommend - a.recommend;
-    if(S==='az')  return a.title.localeCompare(b.title);
+    if(S==='rec')   return b.recommend - a.recommend;
+    if(S==='az')    return a.title.localeCompare(b.title);
+    if(S==='short') return (a.duration||0) - (b.duration||0);
+    if(S==='long')  return (b.duration||0) - (a.duration||0);
     return 0;
   });
   return l;
@@ -776,13 +788,15 @@ function buildFilterDropdowns() {
   const ddYear   = document.getElementById('dd-year');
 
   const vpnItems = ['不要(日本)', '要(日本以外)'];
-  const ddVpn    = document.getElementById('dd-vpn');
+  const ddVpn      = document.getElementById('dd-vpn');
+  const ddSubtitle = document.getElementById('dd-subtitle');
 
-  if (ddPlt)    ddPlt.innerHTML    = makeItems('plt', platItems);
-  if (ddStatus) ddStatus.innerHTML = makeItems('status', statusItems);
-  if (ddStudio) ddStudio.innerHTML = makeItems('studio', studios);
-  if (ddYear)   ddYear.innerHTML   = makeItems('year', years);
-  if (ddVpn)    ddVpn.innerHTML    = makeItems('vpn', vpnItems);
+  if (ddPlt)      ddPlt.innerHTML      = makeItems('plt', platItems);
+  if (ddStatus)   ddStatus.innerHTML   = makeItems('status', statusItems);
+  if (ddStudio)   ddStudio.innerHTML   = makeItems('studio', studios);
+  if (ddYear)     ddYear.innerHTML     = makeItems('year', years);
+  if (ddVpn)      ddVpn.innerHTML      = makeItems('vpn', vpnItems);
+  if (ddSubtitle) ddSubtitle.innerHTML = makeItems('subtitle', SUBTITLE_OPTIONS);
 }
 
 function strs(n, mx=5) { let h=''; for(let i=1;i<=mx;i++) h+=`<span class="star${i<=n?' on':''}">${i<=n?'★':'☆'}</span>`; return h; }
@@ -1019,8 +1033,8 @@ function renderModal(id) {
     <div class="mi"><div class="mi-l">💑 関係値</div><div class="mi-v">${d.relation||'─'}</div></div>
     ${d.studio?`<div class="mi"><div class="mi-l">🎬 制作</div><div class="mi-v">${d.studio}</div></div>`:''}
     ${d.has_original?`<div class="mi"><div class="mi-l">📚 原作</div><div class="mi-v">${d.original_title||d.original||'─'}${d.original_author?' / '+d.original_author:''}</div></div>`:''}
-    ${d.duration?`<div class="mi"><div class="mi-l">⏱ 合計時間</div><div class="mi-v">${d.duration}h</div></div>`:''}
     ${d.ep_count?`<div class="mi"><div class="mi-l">📺 話数</div><div class="mi-v">${d.ep_count}話 × ${d.ep_minutes||'?'}分</div></div>`:''}
+    ${d.duration?`<div class="mi"><div class="mi-l">⏱ 合計時間</div><div class="mi-v">${d.duration}h</div></div>`:''}
     ${d.is_subcap?`<div class="mi"><div class="mi-l">🏷 分類</div><div class="mi-v">${d.is_subcap}</div></div>`:''}
   </div>`;
   // 視聴媒体テーブル
@@ -1902,6 +1916,8 @@ textarea:focus{border-color:var(--lav);}
       <option value="urate">みんなの評価が高い順</option>
       <option value="myrate">自分の評価が高い順</option>
       <option value="rec">Coryのおすすめ順</option>
+      <option value="short">短い順</option>
+      <option value="long">長い順</option>
       <option value="az">タイトル順</option>
     </select>
     <!-- グリッド/リスト切り替え -->
@@ -1938,6 +1954,11 @@ textarea:focus{border-color:var(--lav);}
     <div class="multi-select-wrap">
       <button class="filter-btn" id="fbtn-vpn" onclick="toggleDropdown('dd-vpn')">VPN ▾</button>
       <div class="multi-dropdown" id="dd-vpn"></div>
+    </div>
+    <!-- 字幕 -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-subtitle" onclick="toggleDropdown('dd-subtitle')">字幕 ▾</button>
+      <div class="multi-dropdown" id="dd-subtitle"></div>
     </div>
     <!-- 選択中タグ & リセット -->
     <div id="filter-tags"></div>

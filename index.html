@@ -184,7 +184,9 @@ onAuthStateChanged(auth, async user => {
     userDoc = { dramas: {} };
     showUserFilters(false);
   }
-  render();
+  // render()はmodule scriptの関数。window経由で安全に呼ぶ
+  if (typeof render === 'function') render();
+  else if (typeof window.render === 'function') window.render();
   // admin-only要素の表示制御（サイドバー含む）
   document.querySelectorAll('.admin-only').forEach(el => {
     el.style.display = isAdmin ? '' : 'none';
@@ -221,10 +223,10 @@ async function loadDramasFromDB() {
   }
   render();
 }
-// 設定を読み込んでからデータ取得
+// ブリッジを先に登録してからデータ取得
+_exposeToWindow();
 loadSettings().then(() => {
   loadDramasFromDB();
-  _exposeToWindow();
 });
 
 // ── USER ACTIONS ───────────────────────────────────────────────────────

@@ -1,0 +1,1863 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイGL作品一覧 | Thai Girls Love Drama Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc,
+         collection, getDocs, serverTimestamp, updateDoc, increment, writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC0TY8G1PKh3gz7tG4uhXoGNh2fNsKU39g",
+  authDomain: "thai-gl-works-2c835.firebaseapp.com",
+  databaseURL: "https://thai-gl-works-2c835-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "thai-gl-works-2c835",
+  storageBucket: "thai-gl-works-2c835.firebasestorage.app",
+  messagingSenderId: "71290080508",
+  appId: "1:71290080508:web:47de06018b8617225bdb79"
+};
+
+const ADMIN_EMAILS = ["cory92059@gmail.com"];
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+
+// ── 選択肢定数（後からここを編集するだけで選択肢が変わる） ─────────────
+const PLATFORM_OPTIONS = ['Youtube','Netflix','iQIYI','WeTV','Telasa','GagaOOLala','楽天','FOD','DMM','ch3','その他'];
+const VPN_OPTIONS      = ['不要','要（日本）','要（タイ）'];
+const SUBTITLE_OPTIONS = ['完備','fan sub','自動翻訳','英字幕のみ','なし'];
+const CUT_OPTIONS      = ['uncut','cut','cut+uncut'];
+const PAID_OPTIONS     = ['無料','有料','一部無料'];
+const RELATION_OPTIONS = ['先輩後輩','同い年','歳の差','同世代','関係なし','不明'];
+const WATCH_STATUS     = ['未視聴','視聴中','視聴済み','Drop out'];
+
+// ── STATE ──────────────────────────────────────────────────────────────
+let currentUser = null;
+let isAdmin = false;
+let userDoc = { dramas: {} };  // dramas: { [dramaId]: { status, rate, memo } }
+let localDramas = [];
+
+// ── STATUS 自動判定 ────────────────────────────────────────────────────
+function calcStatus(d) {
+  const start = d.release_start || d.release || '';
+  const end   = d.release_end || '';
+  if (!start || start === '未定' || start === '？') return '放送前';
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const s = new Date(start.length === 7 ? start + '-01' : start);
+  if (isNaN(s.getTime())) return '放送前';
+  if (s > today) return '放送前';
+  if (end && end !== '未定') {
+    const e = new Date(end.length === 7 ? end + '-01' : end);
+    if (!isNaN(e.getTime()) && e < today) return '放送済み';
+  }
+  return '放送中';
+}
+
+// ── AUTH ───────────────────────────────────────────────────────────────
+window.loginWithGoogle = async () => {
+  try { await signInWithPopup(auth, provider); }
+  catch(e) { showToast('ログインに失敗しました: ' + e.message, 'error'); }
+};
+window.logout = async () => {
+  await signOut(auth);
+  showToast('ログアウトしました');
+};
+
+onAuthStateChanged(auth, async user => {
+  currentUser = user;
+  isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
+  updateAuthUI();
+  if (user) {
+    await loadUserDoc(user.uid);
+    showUserFilters(true);
+  } else {
+    userDoc = { dramas: {} };
+    showUserFilters(false);
+  }
+  render();
+  document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+  // サイドバー管理者セクションも表示制御
+  const sbAdminSection = document.getElementById('sb-admin-section');
+  if (sbAdminSection) sbAdminSection.style.display = isAdmin ? '' : 'none';
+});
+
+async function loadUserDoc(uid) {
+  const ref = doc(db, 'users', uid);
+  const snap = await getDoc(ref);
+  userDoc = snap.exists() ? snap.data() : { dramas: {} };
+  if (!userDoc.dramas) userDoc.dramas = {};
+}
+async function saveUserDoc() {
+  if (!currentUser) return;
+  await setDoc(doc(db, 'users', currentUser.uid), userDoc, { merge: true });
+}
+
+// ── DRAMA DATA ─────────────────────────────────────────────────────────
+async function loadDramasFromDB() {
+  try {
+    const snap = await getDocs(collection(db, 'dramas'));
+    if (!snap.empty) {
+      const arr = [];
+      snap.forEach(d => arr.push({ _id: d.id, ...d.data() }));
+      arr.sort((a,b) => (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1);
+      localDramas = arr;
+    } else {
+      localDramas = [...BUILTIN_DRAMAS];
+    }
+  } catch(e) {
+    localDramas = [...BUILTIN_DRAMAS];
+  }
+  render();
+}
+loadDramasFromDB();
+
+// ── USER ACTIONS ───────────────────────────────────────────────────────
+window.saveUserStatus = async (id, status) => {
+  if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
+  const key = String(id);
+  if (!userDoc.dramas[key]) userDoc.dramas[key] = {};
+  userDoc.dramas[key].status = status;
+  await saveUserDoc();
+  render();
+  renderModal(id);
+  showToast('ステータスを保存しました ✓');
+};
+window.saveUserRate = async (id, rate) => {
+  if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
+  const key = String(id);
+  const prev = userDoc.dramas[key]?.rate || 0;
+  if (!userDoc.dramas[key]) userDoc.dramas[key] = {};
+  userDoc.dramas[key].rate = parseInt(rate) || 0;
+  await saveUserDoc();
+  // Firestoreの作品ドキュメントに平均値を更新
+  await updateDramaAvgRate(id, prev, parseInt(rate)||0, !prev);
+  renderModal(id);
+  showToast('評価を保存しました ✓');
+};
+window.saveUserMemo = async (id) => {
+  if (!currentUser) return;
+  const val = document.getElementById('userMemoInput').value.trim();
+  const key = String(id);
+  if (!userDoc.dramas[key]) userDoc.dramas[key] = {};
+  userDoc.dramas[key].memo = val;
+  await saveUserDoc();
+  showToast('メモを保存しました ✓');
+};
+
+async function updateDramaAvgRate(dramaId, oldRate, newRate, isNew) {
+  // Firestoreの作品ドキュメントにuser_rate_avg / user_rate_countを保存
+  const dramaRef = doc(db, 'dramas', String(dramaId));
+  try {
+    const snap = await getDoc(dramaRef);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    let count = data.user_rate_count || 0;
+    let total = (data.user_rate_avg || 0) * count;
+    if (isNew) { total += newRate; count++; }
+    else { total = total - oldRate + newRate; }
+    const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
+    await updateDoc(dramaRef, { user_rate_avg: avg, user_rate_count: count });
+    // localDramasも更新
+    const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
+    if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
+  } catch(e) { /* Firestoreにないデータはスキップ */ }
+}
+
+// ── ADMIN: DRAMA CRUD ──────────────────────────────────────────────────
+let platformRows = []; // 視聴媒体の動的行
+
+window.openAdminAdd = () => {
+  if (!isAdmin) return;
+  platformRows = [];
+  document.getElementById('adminModal').classList.add('open');
+  document.getElementById('adminModalTitle').textContent = '作品を追加';
+  document.getElementById('adminDramaId').value = '';
+  resetAdminForm();
+};
+
+window.openAdminEdit = (id, e) => {
+  if (!isAdmin) return;
+  e && e.stopPropagation();
+  const d = localDramas.find(x => String(x._id||x.title) === String(id));
+  if (!d) return;
+  document.getElementById('adminModal').classList.add('open');
+  document.getElementById('adminModalTitle').textContent = '作品を編集';
+  document.getElementById('adminDramaId').value = d._id || d.title;
+  fillAdminForm(d);
+};
+
+function resetAdminForm() {
+  ['af_title','af_release_start','af_release_end','af_cp_top','af_cp_bottom',
+   'af_studio','af_ep_count','af_ep_minutes','af_synopsis',
+   'af_original_title','af_original_author','af_comment',
+   'af_mdl_url','af_sns_x','af_sns_ig'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('af_relation').value = '';
+  document.getElementById('af_is_subcap').value = 'GL主演';
+  document.getElementById('af_cory_status').value = '未視聴';
+  document.getElementById('af_recommend').value = '0';
+  document.getElementById('af_beginner_score').value = '0';
+  document.getElementById('af_has_original').checked = false;
+  toggleOriginalFields();
+  platformRows = [];
+  renderPlatformRows();
+  renderUrlArrayField('pilot_urls', []);
+  renderUrlArrayField('ost_urls', []);
+}
+
+function fillAdminForm(d) {
+  const set = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
+  // 基本情報
+  set('af_title', d.title);
+  // release_start: 旧releaseフィールドから移行
+  set('af_release_start', d.release_start || (d.release && d.release !== '未定' ? d.release + (d.release.length===7?'-01':'') : ''));
+  set('af_release_end', d.release_end || '');
+  set('af_cp_top', d.cp_top || (d.cp ? d.cp.split(/\n/)[0] : ''));
+  set('af_cp_bottom', d.cp_bottom || (d.cp ? d.cp.split(/\n/)[1] : ''));
+  set('af_studio', d.studio);
+  set('af_ep_count', d.ep_count || '');
+  set('af_ep_minutes', d.ep_minutes || '');
+  // あらすじ・原作
+  set('af_synopsis', d.synopsis === '?' ? '' : d.synopsis);
+  const hasOrig = d.has_original !== undefined ? d.has_original : (d.original && !['なし','オリジナル','?','？',''].includes(d.original));
+  document.getElementById('af_has_original').checked = !!hasOrig;
+  set('af_original_title', d.original_title || (hasOrig ? d.original : ''));
+  set('af_original_author', d.original_author || '');
+  toggleOriginalFields();
+  // 評価
+  document.getElementById('af_relation').value = d.relation || '';
+  document.getElementById('af_is_subcap').value = d.is_subcap || 'GL主演';
+  document.getElementById('af_cory_status').value = d.cory_status || '未視聴';
+  document.getElementById('af_recommend').value = d.recommend || '0';
+  document.getElementById('af_beginner_score').value = d.beginner_score !== undefined ? d.beginner_score : (d.difficulty ? (6 - d.difficulty) : '0');
+  set('af_comment', d.comment);
+  // 視聴媒体
+  if (d.platforms && d.platforms.length) {
+    platformRows = d.platforms.map(p => ({...p}));
+  } else {
+    // 旧データから変換
+    platformRows = [];
+    if (d.platform && d.platform !== '？') {
+      d.platform.split(/[\/,、]/).forEach(p => {
+        p = p.trim();
+        if (!p) return;
+        let vpn = '不要';
+        if (d.vpn === 'あり') vpn = '要（日本）';
+        platformRows.push({ platform: p, vpn, subtitle: d.subtitle||'', cut_uncut: '', paid: '' });
+      });
+    }
+  }
+  renderPlatformRows();
+  // URL配列
+  renderUrlArrayField('pilot_urls', d.pilot_urls || (d.notes && d.notes.includes('Pilot') ? [] : []));
+  renderUrlArrayField('ost_urls', d.ost_urls || []);
+  set('af_mdl_url', d.mdl_url);
+  set('af_sns_x', d.sns_x);
+  set('af_sns_ig', d.sns_ig);
+}
+
+function renderPlatformRows() {
+  const wrap = document.getElementById('platform_rows');
+  if (!wrap) return;
+  wrap.innerHTML = platformRows.map((row, i) => `
+    <div class="plat-row" data-i="${i}">
+      <select onchange="platSet(${i},'platform',this.value)">
+        <option value="">媒体</option>
+        ${PLATFORM_OPTIONS.map(o=>`<option value="${o}"${row.platform===o?' selected':''}>${o}</option>`).join('')}
+      </select>
+      <select onchange="platSet(${i},'vpn',this.value)">
+        <option value="">VPN</option>
+        ${VPN_OPTIONS.map(o=>`<option value="${o}"${row.vpn===o?' selected':''}>${o}</option>`).join('')}
+      </select>
+      <select onchange="platSet(${i},'subtitle',this.value)">
+        <option value="">字幕</option>
+        ${SUBTITLE_OPTIONS.map(o=>`<option value="${o}"${row.subtitle===o?' selected':''}>${o}</option>`).join('')}
+      </select>
+      <select onchange="platSet(${i},'cut_uncut',this.value)">
+        <option value="">cut/uncut</option>
+        ${CUT_OPTIONS.map(o=>`<option value="${o}"${row.cut_uncut===o?' selected':''}>${o}</option>`).join('')}
+      </select>
+      <select onchange="platSet(${i},'paid',this.value)">
+        <option value="">料金</option>
+        ${PAID_OPTIONS.map(o=>`<option value="${o}"${row.paid===o?' selected':''}>${o}</option>`).join('')}
+      </select>
+      <button type="button" class="plat-del" onclick="platDel(${i})">✕</button>
+    </div>
+  `).join('');
+}
+window.platSet = (i, key, val) => { platformRows[i][key] = val; };
+window.platDel = (i) => { platformRows.splice(i,1); renderPlatformRows(); };
+window.platAdd = () => { platformRows.push({platform:'',vpn:'',subtitle:'',cut_uncut:'',paid:''}); renderPlatformRows(); };
+
+function renderUrlArrayField(fieldId, urls) {
+  const wrap = document.getElementById(fieldId + '_rows');
+  if (!wrap) return;
+  const arr = urls && urls.length ? urls : [''];
+  wrap.innerHTML = arr.map((url, i) => `
+    <div class="url-row">
+      <input type="url" value="${url||''}" placeholder="https://youtube.com/..."
+        oninput="urlArrSet('${fieldId}',${i},this.value)">
+      <button type="button" class="plat-del" onclick="urlArrDel('${fieldId}',${i})">✕</button>
+    </div>
+  `).join('');
+  wrap._data = [...arr];
+}
+window.urlArrSet = (fieldId, i, val) => {
+  const wrap = document.getElementById(fieldId + '_rows');
+  if (!wrap._data) wrap._data = [];
+  wrap._data[i] = val;
+};
+window.urlArrDel = (fieldId, i) => {
+  const wrap = document.getElementById(fieldId + '_rows');
+  if (!wrap._data) return;
+  wrap._data.splice(i,1);
+  renderUrlArrayField(fieldId, wrap._data);
+};
+window.urlArrAdd = (fieldId) => {
+  const wrap = document.getElementById(fieldId + '_rows');
+  const arr = wrap._data || [];
+  arr.push('');
+  renderUrlArrayField(fieldId, arr);
+};
+
+window.toggleOriginalFields = function() {
+  const has = document.getElementById('af_has_original').checked;
+  document.getElementById('original_fields').style.display = has ? '' : 'none';
+};
+
+window.closeAdminModal = () => document.getElementById('adminModal').classList.remove('open');
+
+window.submitAdminForm = async () => {
+  if (!isAdmin) return;
+  const id = document.getElementById('adminDramaId').value.trim();
+  const get = k => (document.getElementById('af_'+k)||{}).value?.trim() || '';
+
+  const release_start = get('release_start');
+  const release_end   = get('release_end');
+
+  const data = {
+    title:          get('title'),
+    studio:         get('studio'),
+    release_start,
+    release_end,
+    cp_top:         get('cp_top'),
+    cp_bottom:      get('cp_bottom'),
+    cp:             [get('cp_top'), get('cp_bottom')].filter(Boolean).join(' / '),
+    ep_count:       parseInt(get('ep_count'))||0,
+    ep_minutes:     parseInt(get('ep_minutes'))||0,
+    synopsis:       get('synopsis'),
+    has_original:   document.getElementById('af_has_original').checked,
+    original_title: get('original_title'),
+    original_author:get('original_author'),
+    relation:       get('relation'),
+    is_subcap:      get('is_subcap'),
+    cory_status:    get('cory_status'),
+    recommend:      parseFloat(get('recommend'))||0,
+    beginner_score: parseFloat(get('beginner_score'))||0,
+    comment:        get('comment'),
+    mdl_url:        get('mdl_url'),
+    sns_x:          get('sns_x'),
+    sns_ig:         get('sns_ig'),
+    platforms:      platformRows.filter(r => r.platform),
+    pilot_urls:     (document.getElementById('pilot_urls_rows')?._data || []).filter(Boolean),
+    ost_urls:       (document.getElementById('ost_urls_rows')?._data || []).filter(Boolean),
+    updatedAt:      serverTimestamp(),
+  };
+  // 自動計算
+  data.rate = Math.round(data.recommend * data.beginner_score * 10) / 10;
+  data.year = release_start && release_start.length >= 4 ? release_start.slice(0,4) : '未定';
+  data.sort_date = release_start && release_start.length >= 7 ? release_start.slice(0,7) : '9999-99';
+  if (release_start === '未定' || !release_start) { data.year = '未定'; data.sort_date = '9999-99'; }
+  // duration自動計算（時間）
+  if (data.ep_count && data.ep_minutes) {
+    data.duration = Math.round(data.ep_count * data.ep_minutes / 60 * 10) / 10;
+  }
+
+  if (!data.title) { showToast('タイトルを入力してください', 'error'); return; }
+
+  try {
+    if (id) {
+      await setDoc(doc(db,'dramas',id), data, {merge:true});
+      showToast('更新しました ✓');
+    } else {
+      await setDoc(doc(db,'dramas', Date.now().toString()), data);
+      showToast('追加しました ✓');
+    }
+    closeAdminModal();
+    await loadDramasFromDB();
+  } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
+};
+
+window.deleteDrama = async (id, e) => {
+  e && e.stopPropagation();
+  if (!isAdmin) return;
+  const d = localDramas.find(x => String(x._id||x.title) === String(id));
+  if (!confirm(`「${d?d.title:id}」を削除しますか？`)) return;
+  try {
+    await deleteDoc(doc(db,'dramas',id));
+    showToast('削除しました');
+    closeMD();
+    await loadDramasFromDB();
+  } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
+};
+
+// ── 一括移行スクリプト ──────────────────────────────────────────────────
+window.uploadBuiltinToFirestore = async () => {
+  if (!isAdmin) return;
+  if (!confirm(`BUILTIN_DRAMAS(${BUILTIN_DRAMAS.length}件)を新フィールド形式に変換してFirestoreにアップロードします。\n既存データは上書きされます。よろしいですか？`)) return;
+  showToast('移行中...'); let count = 0;
+  const batch = writeBatch(db);
+  for (const d of BUILTIN_DRAMAS) {
+    const safeId = d.title.replace(/[^\w\u3000-\u9fff]/g,'_').slice(0,50);
+    // release変換
+    let rs = d.release || '';
+    if (rs && rs !== '未定' && rs !== '？' && /^\d{4}-\d{2}$/.test(rs)) rs = rs + '-01';
+    // difficulty逆転: 旧difficulty 0〜5 → beginner_score 5→5, 4→4, 1→1, 0→0 (高いほど難しい→逆転)
+    // 旧: 5=難しい → 新: beginner_score 5=初心者向け なので beginner_score = 6 - difficulty (0はそのまま0)
+    const bScore = d.difficulty ? Math.max(0, 6 - d.difficulty) : 0;
+    // platforms変換
+    const platforms = [];
+    if (d.platform && d.platform !== '？') {
+      d.platform.split(/[\/,、]/).forEach(p => {
+        p = p.trim(); if (!p) return;
+        let vpn = '不要';
+        if (d.vpn === 'あり') vpn = '要（日本）';
+        // subtitleは単一値→各行に付与
+        const subs = (d.subtitle||'').split(/[\/,、]/).map(s=>s.trim());
+        platforms.push({
+          platform: p,
+          vpn,
+          subtitle: subs[0] || '',
+          cut_uncut: '',
+          paid: ''
+        });
+      });
+    }
+    // is_subcap変換
+    const isSubcap = (d.notes||'').includes('サブカプ') ? 'BLサブカプ' : 'GL主演';
+    // original変換
+    const hasOrig = d.original && !['なし','オリジナル','?','？',''].includes(d.original);
+    const newData = {
+      title: d.title,
+      studio: d.studio || '',
+      release_start: rs,
+      release_end: '',
+      cp_top: (d.cp||'').split(/\n/)[0] || d.cp || '',
+      cp_bottom: (d.cp||'').split(/\n/)[1] || '',
+      cp: d.cp || '',
+      ep_count: 0,
+      ep_minutes: 0,
+      duration: parseFloat(d.duration) || 0,
+      synopsis: d.synopsis === '?' ? '' : (d.synopsis || ''),
+      has_original: hasOrig,
+      original_title: hasOrig ? d.original : '',
+      original_author: '',
+      platforms,
+      relation: d.relation && !['?','？'].includes(d.relation) ? d.relation : '',
+      is_subcap: isSubcap,
+      cory_status: '視聴済み',
+      recommend: d.recommend || 0,
+      beginner_score: bScore,
+      rate: d.recommend && bScore ? Math.round(d.recommend * bScore * 10) / 10 : 0,
+      comment: d.comment || '',
+      mdl_url: '', pilot_urls: [], ost_urls: [], sns_x: '', sns_ig: '',
+      year: d.year || '未定',
+      sort_date: d.sort_date || '9999-99',
+      updatedAt: serverTimestamp(),
+    };
+    batch.set(doc(db,'dramas', safeId), newData);
+    count++;
+  }
+  await batch.commit();
+  showToast(`${count}件の移行が完了しました ✓`);
+  await loadDramasFromDB();
+};
+
+// ── UI HELPERS ─────────────────────────────────────────────────────────
+function updateAuthUI() {
+  const loginBtn = document.getElementById('loginBtn');
+  const userPanel = document.getElementById('userPanel');
+  const avatar = document.getElementById('userAvatar');
+  const name = document.getElementById('userName');
+  const adminBadge = document.getElementById('adminBadge');
+  if (currentUser) {
+    loginBtn.style.display = 'none'; userPanel.style.display = 'flex';
+    if (currentUser.photoURL) { avatar.src = currentUser.photoURL; avatar.style.display='block'; }
+    else avatar.style.display = 'none';
+    name.textContent = currentUser.displayName || currentUser.email;
+    adminBadge.style.display = isAdmin ? 'inline-block' : 'none';
+  } else {
+    loginBtn.style.display = 'flex'; userPanel.style.display = 'none';
+  }
+}
+function showUserFilters(on) {
+  ['fw','ffav'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=on?'':'none';});
+  const sr = document.getElementById('statsRow');
+  if (sr) sr.style.display = on ? 'flex' : 'none';
+}
+function showToast(msg, type='ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show ' + (type||'');
+  clearTimeout(t._timer); t._timer = setTimeout(()=>t.classList.remove('show'), 3000);
+}
+
+// ── FILTER / SORT STATE ────────────────────────────────────────────────
+let V='g', Y='all', F='a', Q='', S='new', REL='', PLT='', STATUS_F='';
+let openModalId = null;
+
+window.setView = v => {
+  V=v; ['vg','vl'].forEach(id=>document.getElementById(id)?.classList.toggle('active',id==='v'+v)); render();
+};
+window.setF = f => {
+  F=f;
+  ['fa','fr','ft','fw','ffav'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  document.getElementById({a:'fa',r:'fr',t:'ft',w:'fw',fav:'ffav'}[f])?.classList.add('active');
+  render();
+};
+window.setStatusF = s => {
+  STATUS_F = STATUS_F === s ? '' : s;
+  document.querySelectorAll('.status-btn').forEach(el => el.classList.toggle('active', el.dataset.s === STATUS_F));
+  render();
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('q').addEventListener('input', e=>{Q=e.target.value;render();});
+  document.getElementById('srt').addEventListener('change', e=>{S=e.target.value;render();});
+  document.getElementById('rel').addEventListener('change', e=>{REL=e.target.value;render();});
+  document.getElementById('plt').addEventListener('change', e=>{PLT=e.target.value;render();});
+  buildYearTabs();
+  const c = document.getElementById('petals');
+  for(let i=0;i<18;i++){const p=document.createElement('div');p.className='petal';p.style.cssText=`left:${Math.random()*100}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*8}s;opacity:${.1+Math.random()*.25};transform:scale(${.5+Math.random()})`;c.appendChild(p);}
+  updateHeroStats();
+});
+
+function go() {
+  let l = [...localDramas];
+  if (Y !== 'all') l = l.filter(d => d.year === Y);
+  if (STATUS_F) l = l.filter(d => calcStatus(d) === STATUS_F);
+  if (F==='r')   l = l.filter(d => d.rate > 0);
+  if (F==='t')   l = l.filter(d => d.recommend >= 5);
+  if (F==='w')   l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
+  if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
+  if (REL) l = l.filter(d => d.relation === REL);
+  if (PLT) l = l.filter(d => {
+    if (d.platforms && d.platforms.length) return d.platforms.some(p => p.platform === PLT);
+    return (d.platform||'').includes(PLT);
+  });
+  if (Q) { const q=Q.toLowerCase(); l=l.filter(d=>(d.title+d.cp+(d.cp_top||'')+(d.cp_bottom||'')+d.synopsis+d.studio).toLowerCase().includes(q)); }
+  l.sort((a,b) => {
+    if(S==='new') return (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1;
+    if(S==='old') return (a.sort_date||'9999') > (b.sort_date||'9999') ? 1 : -1;
+    if(S==='rhi') return b.rate - a.rate;
+    if(S==='rlo') return a.rate - b.rate;
+    if(S==='rec') return b.recommend - a.recommend;
+    if(S==='az')  return a.title.localeCompare(b.title);
+    return 0;
+  });
+  return l;
+}
+
+function buildYearTabs() {
+  const yrs = ['all'];
+  localDramas.forEach(d=>{if(d.year&&!yrs.includes(d.year))yrs.push(d.year);});
+  yrs.sort((a,b)=>a==='all'?-1:b==='all'?1:b.localeCompare(a));
+  const wrap = document.getElementById('tabs'); wrap.innerHTML='';
+  yrs.forEach(y=>{
+    const t=document.createElement('div'); t.className='ytab'+(y===Y?' active':'');
+    t.textContent = y==='all'?'すべて':y+'年'; t.onclick=()=>{Y=y;buildYearTabs();render();};
+    wrap.appendChild(t);
+  });
+}
+
+function strs(n, mx=5) { let h=''; for(let i=1;i<=mx;i++) h+=`<span class="star${i<=n?' on':''}">${i<=n?'★':'☆'}</span>`; return h; }
+
+function platDisplay(d) {
+  if (d.platforms && d.platforms.length) {
+    return d.platforms.map(p => {
+      let c='cot';
+      const name = p.platform||'';
+      if(/youtube|yt/i.test(name))c='cyt';else if(/netflix/i.test(name))c='cnf';
+      else if(/iqiyi/i.test(name))c='ciq';else if(/wetv/i.test(name))c='cwt';
+      else if(/telasa/i.test(name))c='ctl';else if(/gaga/i.test(name))c='cgg';
+      else if(/rakuten|楽天/i.test(name))c='crk';
+      return `<span class="chip ${c}">${name}${p.subtitle?'<span class="chip-sub">'+p.subtitle+'</span>':''}</span>`;
+    }).join('');
+  }
+  // 旧データ互換
+  if (!d.platform || d.platform==='？') return '';
+  return d.platform.split(/[\/,、]/).map(s=>{
+    s=s.trim(); let c='cot';
+    if(/youtube/i.test(s))c='cyt';else if(/netflix/i.test(s))c='cnf';
+    else if(/iqiyi/i.test(s))c='ciq';else if(/wetv/i.test(s))c='cwt';
+    else if(/telasa/i.test(s))c='ctl';else if(/gaga/i.test(s))c='cgg';
+    else if(/rakuten|楽天/i.test(s))c='crk';
+    return `<span class="chip ${c}">${s}</span>`;
+  }).join('');
+}
+
+function card(d, listMode) {
+  // ── 基本データの準備 ──────────────────────────────────────────────────
+  const id     = String(d._id || d.title);
+  const ud     = userDoc.dramas?.[id] || {};
+  const sub    = d.is_subcap === 'BLサブカプ';
+  const status = calcStatus(d);
+  const isUp   = status === '放送前';   // 放送前フラグ
+  const cp     = (d.cp || '').split(/\n/).filter(Boolean).join(' / ');
+  const year   = (d.release_start || d.release || '─').slice(0, 7);
+
+  // ── CSSクラス ─────────────────────────────────────────────────────────
+  const cls = [
+    'card',
+    isUp ? 'upcoming' : (!d.rate && !d.recommend ? 'no-info' : ''),
+    ud.status === '視聴済み' ? 'is-watched' : '',
+  ].filter(Boolean).join(' ');
+
+  // ── ステータスタグの色クラス ──────────────────────────────────────────
+  const stCls = status === '放送済み' ? 'done' : status === '放送中' ? 'now' : 'pre';
+
+  // ── 関係値タグ ────────────────────────────────────────────────────────
+  const relTag = (d.relation && d.relation !== '?' && d.relation !== '？')
+    ? `<span class="tag tr">${d.relation}</span>` : '';
+
+  // ── ユーザー操作ボタン ────────────────────────────────────────────────
+  const userBtns = currentUser ? `
+    <select class="status-sel"
+      onchange="saveUserStatus('${id}', this.value)"
+      onclick="event.stopPropagation()">
+      <option value="">ステータス</option>
+      ${WATCH_STATUS.map(s =>
+        `<option value="${s}"${ud.status === s ? ' selected' : ''}>${s}</option>`
+      ).join('')}
+    </select>` : '';
+
+  const adminBtns = isAdmin
+    ? `<button class="icoBtn admin-edit-btn"
+         onclick="openAdminEdit('${id}', event)" title="編集">✏</button>`
+    : '';
+
+  // ── バッジ類 ──────────────────────────────────────────────────────────
+  const subBadge      = sub              ? `<span class="slabel">BLサブカプ</span>` : '';
+  const watchedBadge  = ud.status === '視聴済み' ? `<span class="wlabel">視聴済</span>` : '';
+  const upBadge       = isUp             ? `<span class="utag">予定</span>`        : '';
+
+  // ── リストモード ──────────────────────────────────────────────────────
+  if (listMode) {
+    const dots = d.recommend
+      ? `<div class="recdots">
+           ${Array.from({ length: 5 }, (_, i) =>
+             `<div class="rdot${i < d.recommend ? ' on' : ''}"></div>`
+           ).join('')}
+         </div>` : '';
+
+    return `
+      <div class="${cls}" onclick="openM('${id}')">
+        <div class="card-top"></div>
+        <div class="cbody list-body">
+          <div class="cleft">
+            <div class="cheader">
+              <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
+            </div>
+            ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
+            <div class="cmeta">
+              ${relTag}
+              <span class="tag st-${stCls}">${status}</span>
+            </div>
+          </div>
+          <div class="cright">
+            <span class="cyear">${year}</span>
+            ${dots}
+            ${d.rate ? `<div class="ratept">★${d.rate}</div>` : ''}
+            <div class="card-btns">${userBtns}${adminBtns}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── グリッドモード ────────────────────────────────────────────────────
+  return `
+    <div class="${cls}" onclick="openM('${id}')">
+      <div class="card-top"></div>
+      <div class="cbody">
+        <div class="cheader">
+          <div class="ctitle">
+            ${d.title}${upBadge}${subBadge}${watchedBadge}
+          </div>
+          <span class="cyear">${year}</span>
+        </div>
+        ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
+        ${d.synopsis && d.synopsis !== '?'
+          ? `<div class="csyno">${d.synopsis}</div>` : ''}
+        <div class="cmeta">
+          ${relTag}
+          <span class="tag st-${stCls}">${status}</span>
+          ${d.duration ? `<span class="tag th">⏱${d.duration}h</span>` : ''}
+        </div>
+        ${d.rate || d.recommend ? `
+          <div class="crating">
+            <div class="stars">${strs(d.recommend)}</div>
+            ${d.rate ? `<span class="rpt">★${d.rate}</span>` : ''}
+          </div>` : ''}
+        ${d.comment
+          ? `<div class="ccomment">${d.comment}</div>` : ''}
+        <div class="card-btns">${userBtns}${adminBtns}</div>
+      </div>
+    </div>`;
+}
+
+function render() {
+  const l = go();
+  document.getElementById('cnt').textContent = l.length + ' 件';
+  document.getElementById('sTotal').textContent = localDramas.length;
+  document.getElementById('sRated').textContent = localDramas.filter(d=>d.rate>0).length;
+  document.getElementById('sTop').textContent = localDramas.filter(d=>d.recommend>=5).length;
+  document.getElementById('sUpcoming').textContent = localDramas.filter(d=>calcStatus(d)==='放送前').length;
+  if (currentUser) {
+    const wc = Object.values(userDoc.dramas||{}).filter(v=>v.status==='視聴済み').length;
+    const sr = document.getElementById('statsRow');
+    if(sr){sr.innerHTML=`<span class="stag">✓ 視聴済み ${wc}件</span>`;sr.style.display='flex';}
+  }
+  buildYearTabs();
+  updateSidebarState();
+  const g=document.getElementById('grid'), em=document.getElementById('empty');
+  if (!l.length) { g.style.display='none'; em.style.display='block'; return; }
+  g.style.display=''; em.style.display='none';
+  g.className='grid'+(V==='l'?' list':'');
+  g.innerHTML = l.map(d=>card(d,V==='l')).join('');
+}
+
+window.openM = id => {
+  openModalId = String(id);
+  renderModal(id);
+  document.getElementById('ov').classList.add('open');
+  document.body.style.overflow='hidden';
+};
+
+function renderModal(id) {
+  id = String(id);
+  const d = localDramas.find(x=>String(x._id||x.title)===id);
+  if (!d) return;
+  const ud = userDoc.dramas?.[id] || {};
+  const cp = (d.cp||'').split(/\n/).filter(Boolean).join(' / ');
+  const status = calcStatus(d);
+  document.getElementById('mt').textContent = d.title;
+  document.getElementById('mc').textContent = cp ? '👩‍❤️‍👩 ' + cp : '';
+  let b = '';
+  // あらすじ
+  if (d.synopsis && d.synopsis !== '?') b += `<div class="msec"><div class="mlab">📖 あらすじ</div><div class="mcont">${(d.synopsis||'').replace(/\n/g,'<br>')}</div></div>`;
+  // Cory評価
+  if (d.rate || d.recommend || d.beginner_score) {
+    b += `<div class="mrate">
+      <div class="mrow">
+        <div><div class="mmlab">おすすめ度</div><div style="display:flex;gap:4px">${strs(d.recommend)}</div></div>
+        ${d.beginner_score?`<div><div class="mmlab">初心者向け</div><div class="dbar">${Array.from({length:5},(_,i)=>`<div class="dseg${i<d.beginner_score?' on':''}"></div>`).join('')}</div></div>`:''}
+        ${d.rate?`<div><div class="mmlab">総合Pt</div><div class="bigpt">${d.rate}</div></div>`:''}
+        ${d.user_rate_avg?`<div><div class="mmlab">ユーザー平均</div><div class="bigpt">★${d.user_rate_avg}<span style="font-size:10px;color:var(--muted)">(${d.user_rate_count||0}件)</span></div></div>`:''}
+      </div>
+    </div>`;
+  }
+  // 基本情報グリッド
+  const rstart = (d.release_start||d.release||'').slice(0,10);
+  const rend   = d.release_end ? d.release_end.slice(0,10) : '';
+  b += `<div class="mgrid">
+    <div class="mi"><div class="mi-l">📅 放送期間</div><div class="mi-v">${rstart}${rend?' 〜 '+rend:''}</div></div>
+    <div class="mi"><div class="mi-l">📡 ステータス</div><div class="mi-v"><span class="tag st-${status==='放送済み'?'done':status==='放送中'?'now':'pre'}">${status}</span></div></div>
+    <div class="mi"><div class="mi-l">💑 関係値</div><div class="mi-v">${d.relation||'─'}</div></div>
+    ${d.studio?`<div class="mi"><div class="mi-l">🎬 制作</div><div class="mi-v">${d.studio}</div></div>`:''}
+    ${d.has_original?`<div class="mi"><div class="mi-l">📚 原作</div><div class="mi-v">${d.original_title||d.original||'─'}${d.original_author?' / '+d.original_author:''}</div></div>`:''}
+    ${d.duration?`<div class="mi"><div class="mi-l">⏱ 合計時間</div><div class="mi-v">${d.duration}h</div></div>`:''}
+    ${d.ep_count?`<div class="mi"><div class="mi-l">📺 話数</div><div class="mi-v">${d.ep_count}話 × ${d.ep_minutes||'?'}分</div></div>`:''}
+    ${d.is_subcap?`<div class="mi"><div class="mi-l">🏷 分類</div><div class="mi-v">${d.is_subcap}</div></div>`:''}
+  </div>`;
+  // 視聴媒体テーブル
+  const platHtml = platDisplay(d);
+  if (platHtml) {
+    b += `<div class="msec"><div class="mlab">📺 視聴可能媒体</div>`;
+    if (d.platforms && d.platforms.length) {
+      b += `<table class="plat-table"><thead><tr><th>媒体</th><th>VPN</th><th>字幕</th><th>cut</th><th>料金</th></tr></thead><tbody>`;
+      d.platforms.forEach(p => {
+        b += `<tr><td><span class="chip ${getChipClass(p.platform)}">${p.platform}</span></td><td>${p.vpn||'─'}</td><td>${p.subtitle||'─'}</td><td>${p.cut_uncut||'─'}</td><td>${p.paid||'─'}</td></tr>`;
+      });
+      b += `</tbody></table>`;
+    } else { b += `<div class="chips" style="margin-top:5px">${platHtml}</div>`; }
+    b += `</div>`;
+  }
+  // Coryコメント
+  if (d.comment) b += `<div class="mcomment">💬 ${d.comment}</div>`;
+  // リンク
+  const links = [];
+  if (d.mdl_url) links.push(`<a href="${d.mdl_url}" target="_blank" class="ext-link">📋 MyDramaList</a>`);
+  if (d.sns_x) links.push(`<a href="${d.sns_x}" target="_blank" class="ext-link">𝕏 Twitter</a>`);
+  if (d.sns_ig) links.push(`<a href="${d.sns_ig}" target="_blank" class="ext-link">📸 Instagram</a>`);
+  if (d.pilot_urls && d.pilot_urls.length) d.pilot_urls.forEach((u,i) => links.push(`<a href="${u}" target="_blank" class="ext-link">▶ Pilot${d.pilot_urls.length>1?'('+(i+1)+')':''}</a>`));
+  if (d.ost_urls && d.ost_urls.length) d.ost_urls.forEach((u,i) => links.push(`<a href="${u}" target="_blank" class="ext-link">🎵 OST${d.ost_urls.length>1?'('+(i+1)+')':''}</a>`));
+  if (links.length) b += `<div class="msec"><div class="mlab">🔗 リンク</div><div class="ext-links">${links.join('')}</div></div>`;
+  // ユーザーセクション
+  if (currentUser) {
+    b += `<div class="user-section">
+      <div class="mlab" style="margin-bottom:8px">👤 マイ記録</div>
+      <div class="user-fields">
+        <div class="uf-row">
+          <label>視聴ステータス</label>
+          <div class="btn-grp" style="flex-wrap:wrap">
+            ${WATCH_STATUS.map(s=>`<button class="btn${ud.status===s?' active':''}" onclick="saveUserStatus('${id}','${s}')">${s}</button>`).join('')}
+          </div>
+        </div>
+        <div class="uf-row">
+          <label>マイ評価 ⭐（整数）</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="number" id="userRateInput" min="0" max="5" step="1" value="${ud.rate||0}"
+              style="width:60px;background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.3);border-radius:6px;padding:5px 8px;color:var(--text);font-size:14px;">
+            <button class="saveNoteBtn" onclick="saveUserRate('${id}',document.getElementById('userRateInput').value)">保存</button>
+          </div>
+          ${d.user_rate_avg?`<div style="font-size:11px;color:var(--muted);margin-top:4px">みんなの平均: ★${d.user_rate_avg}（${d.user_rate_count||0}件）</div>`:''}
+        </div>
+        <div class="uf-row">
+          <label>📝 メモ</label>
+          <textarea id="userMemoInput" placeholder="感想・メモを入力...">${ud.memo||''}</textarea>
+          <button class="saveNoteBtn" onclick="saveUserMemo('${id}')">メモを保存</button>
+        </div>
+      </div>
+    </div>`;
+  } else {
+    b += `<div class="login-prompt"><button class="googleBtn" onclick="loginWithGoogle()"><img src="https://www.google.com/favicon.ico" width="16" height="16" style="border-radius:2px">Googleでログインすると視聴記録・評価・メモが保存できます</button></div>`;
+  }
+  if (isAdmin) b += `<div class="admin-section"><div class="mlab" style="margin-bottom:8px">👑 管理者操作</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="adminActBtn" onclick="openAdminEdit('${id}',event)">✏ 編集</button><button class="adminActBtn danger" onclick="deleteDrama('${id}',event)">🗑 削除</button></div></div>`;
+  document.getElementById('mb').innerHTML = b;
+}
+
+function getChipClass(name) {
+  if(!name)return'cot';
+  if(/youtube/i.test(name))return'cyt';if(/netflix/i.test(name))return'cnf';
+  if(/iqiyi/i.test(name))return'ciq';if(/wetv/i.test(name))return'cwt';
+  if(/telasa/i.test(name))return'ctl';if(/gaga/i.test(name))return'cgg';
+  if(/rakuten|楽天/i.test(name))return'crk';return'cot';
+}
+
+window.closeM = e => { if(e.target===document.getElementById('ov')) closeMD(); };
+window.closeMD = () => { document.getElementById('ov').classList.remove('open'); document.body.style.overflow=''; openModalId=null; };
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeMD(); });
+
+function updateHeroStats() {
+  document.getElementById('sTotal').textContent = localDramas.length;
+  document.getElementById('sRated').textContent = localDramas.filter(d=>d.rate>0).length;
+  document.getElementById('sTop').textContent = localDramas.filter(d=>d.recommend>=5).length;
+  document.getElementById('sUpcoming').textContent = localDramas.filter(d=>calcStatus(d)==='放送前').length;
+}
+</script>
+
+<style>
+:root{
+  --rose:#e8547a;--rl:#f0839e;--rp:#fce8ee;
+  --lav:#9b7ec8;--ll:#c4a8e8;
+  --gold:#d4a843;--dark:#1a1220;--dark2:#251830;
+  --text:#f0e8f8;--muted:#b09cc8;
+  --card:#231630;--border:rgba(155,126,200,.2);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--dark);color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:14px;min-height:100vh;overflow-x:hidden;}
+
+.hero{background:linear-gradient(135deg,#1a0a28,#2a1040 40%,#1e0830 70%,#0e0518);
+  padding:52px 20px 40px;text-align:center;position:relative;overflow:hidden;
+  border-bottom:1px solid rgba(155,126,200,.3);}
+.hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 30% 50%,rgba(232,84,122,.12),transparent 60%),
+             radial-gradient(ellipse at 70% 30%,rgba(155,126,200,.15),transparent 55%);}
+.petals{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+.petal{position:absolute;width:6px;height:10px;background:rgba(232,84,122,.2);
+  border-radius:50% 0 50% 0;animation:fall linear infinite;}
+@keyframes fall{0%{transform:translateY(-20px) rotate(0);opacity:.6}100%{transform:translateY(100vh) rotate(360deg);opacity:0}}
+.hero h1{font-family:'DM Serif Display',serif;font-size:clamp(1.8rem,5vw,3rem);
+  background:linear-gradient(135deg,var(--rl),var(--ll),var(--gold));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  line-height:1.2;margin-bottom:6px;position:relative;}
+.hero-sub{color:var(--muted);font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+  margin-bottom:20px;position:relative;}
+.hero-stats{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;position:relative;}
+.stat-num{font-family:'DM Serif Display',serif;font-size:1.8rem;color:var(--rl);line-height:1;}
+.stat-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:2px;}
+.update-note{position:absolute;top:12px;right:14px;font-size:11px;color:var(--muted);
+  background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);padding:3px 9px;border-radius:20px;}
+
+.auth-bar{position:absolute;top:12px;left:16px;display:flex;align-items:center;gap:8px;z-index:10;}
+#loginBtn{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:5px 12px;
+  color:var(--text);cursor:pointer;font-size:12px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+#loginBtn:hover{background:rgba(255,255,255,.15);}
+#userPanel{display:none;align-items:center;gap:8px;}
+#userAvatar{width:28px;height:28px;border-radius:50%;border:2px solid var(--lav);}
+#userName{font-size:12px;color:var(--text);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#adminBadge{background:linear-gradient(90deg,var(--gold),#e8c060);color:#1a1000;
+  font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;display:none;}
+.logout-btn{background:none;border:1px solid rgba(255,255,255,.15);border-radius:12px;
+  padding:3px 9px;color:var(--muted);cursor:pointer;font-size:11px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+.logout-btn:hover{border-color:var(--rose);color:var(--rl);}
+
+#statsRow{display:none;gap:10px;justify-content:center;flex-wrap:wrap;
+  padding:8px 16px;background:rgba(155,126,200,.06);border-bottom:1px solid rgba(155,126,200,.1);}
+.stag{font-size:12px;color:var(--ll);background:rgba(155,126,200,.1);
+  border:1px solid rgba(155,126,200,.2);padding:3px 10px;border-radius:12px;}
+
+.controls{position:sticky;top:0;z-index:100;background:rgba(26,18,32,.96);
+  backdrop-filter:blur(12px);border-bottom:1px solid rgba(155,126,200,.2);padding:9px 14px;}
+.ctrl-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;max-width:1400px;margin:0 auto;}
+.srch{position:relative;flex:1;min-width:150px;}
+.srch input{width:100%;background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);
+  border-radius:8px;padding:7px 10px 7px 30px;color:var(--text);
+  font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;transition:border-color .2s;}
+.srch input:focus{border-color:var(--rose);}
+.srch::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;pointer-events:none;}
+select{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);
+  border-radius:8px;padding:7px 8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;
+  font-size:12px;cursor:pointer;outline:none;}
+select option{background:var(--dark2);}
+.btn-grp{display:flex;gap:3px;}
+.btn{background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);border-radius:6px;
+  padding:6px 10px;color:var(--muted);cursor:pointer;font-size:12px;transition:all .2s;
+  font-family:'Noto Sans JP',sans-serif;white-space:nowrap;}
+.btn:hover,.btn.active{background:rgba(232,84,122,.2);border-color:var(--rose);color:var(--rl);}
+.cnt{background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.2);
+  border-radius:20px;padding:4px 11px;font-size:12px;color:var(--rl);white-space:nowrap;}
+.admin-add-btn{background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.3);
+  border-radius:8px;padding:6px 12px;color:var(--gold);cursor:pointer;font-size:12px;
+  font-family:'Noto Sans JP',sans-serif;display:none;transition:all .2s;}
+.admin-add-btn:hover{background:rgba(212,168,67,.25);}
+.upload-btn{background:rgba(92,184,133,.1);border:1px solid rgba(92,184,133,.25);
+  border-radius:8px;padding:6px 12px;color:#7dc87d;cursor:pointer;font-size:12px;
+  font-family:'Noto Sans JP',sans-serif;display:none;}
+
+/* ステータスフィルターバー */
+.status-bar{max-width:1400px;margin:0 auto;padding:7px 14px;
+  background:rgba(155,126,200,.04);border-bottom:1px solid rgba(155,126,200,.1);
+  display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.status-bar-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
+.status-btn{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.15);
+  border-radius:20px;padding:3px 10px;font-size:11px;color:var(--muted);cursor:pointer;
+  font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+.status-btn.active,.status-btn:hover{background:rgba(155,126,200,.2);border-color:var(--lav);color:var(--ll);}
+
+.tabs{max-width:1400px;margin:0 auto;border-bottom:1px solid rgba(155,126,200,.15);
+  display:flex;overflow-x:auto;scrollbar-width:none;padding:0 14px;background:rgba(26,18,32,.5);}
+.tabs::-webkit-scrollbar{display:none;}
+.ytab{padding:8px 14px;cursor:pointer;font-size:12px;color:var(--muted);
+  border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;}
+.ytab:hover{color:var(--text);}
+.ytab.active{color:var(--rl);border-bottom-color:var(--rose);}
+
+.gwrap{max-width:1400px;margin:0 auto;padding:14px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:13px;}
+.grid.list{grid-template-columns:1fr;}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;transition:transform .2s,box-shadow .2s,border-color .2s;cursor:pointer;position:relative;}
+.card:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px rgba(232,84,122,.3);border-color:rgba(232,84,122,.4);}
+.card.is-watched{border-color:rgba(92,184,133,.3);}
+.card.is-watched .card-top{background:linear-gradient(90deg,#5cb885,#3da86a);}
+.card-top{height:3px;background:linear-gradient(90deg,var(--rose),var(--lav));}
+.card.upcoming .card-top{background:linear-gradient(90deg,var(--lav),rgba(155,126,200,.3));}
+.card.no-info .card-top{background:linear-gradient(90deg,rgba(155,126,200,.3),rgba(155,126,200,.15));}
+.cbody{padding:12px 14px;}
+.cheader{display:flex;justify-content:space-between;align-items:flex-start;gap:7px;margin-bottom:6px;}
+.ctitle{font-family:'DM Serif Display',serif;font-size:14.5px;color:var(--text);line-height:1.3;flex:1;}
+.cyear{font-size:10px;color:var(--muted);background:rgba(155,126,200,.1);
+  border:1px solid rgba(155,126,200,.2);padding:2px 6px;border-radius:9px;white-space:nowrap;flex-shrink:0;}
+.ccp{font-size:11px;color:var(--ll);margin-bottom:5px;}
+.csyno{font-size:11px;color:var(--muted);line-height:1.6;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.cmeta{margin-top:9px;padding-top:8px;border-top:1px solid rgba(155,126,200,.1);
+  display:flex;gap:4px;flex-wrap:wrap;align-items:center;}
+.tag{font-size:10px;padding:2px 6px;border-radius:9px;white-space:nowrap;}
+.tr{background:rgba(155,126,200,.12);border:1px solid rgba(155,126,200,.25);color:var(--ll);}
+.th{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.15);color:var(--muted);}
+/* ステータスタグ */
+.st-done{background:rgba(92,184,133,.12);border:1px solid rgba(92,184,133,.3);color:#7dc87d;}
+.st-now{background:rgba(232,84,122,.12);border:1px solid rgba(232,84,122,.3);color:var(--rl);}
+.st-pre{background:rgba(155,126,200,.12);border:1px solid rgba(155,126,200,.3);color:var(--ll);}
+.crating{margin-top:8px;display:flex;align-items:center;gap:9px;}
+.stars{display:flex;gap:2px;}
+.star{font-size:11px;color:rgba(212,168,67,.2);}
+.star.on{color:var(--gold);}
+.rpt{font-size:11px;color:var(--muted);}
+.ccomment{margin-top:8px;padding:6px 10px;background:rgba(232,84,122,.06);
+  border-left:3px solid var(--rose);border-radius:0 5px 5px 0;font-size:11px;
+  color:#d4a8b8;line-height:1.5;font-style:italic;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.slabel{background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);color:var(--gold);
+  padding:1px 5px;border-radius:7px;font-size:9px;margin-left:4px;}
+.utag{margin-left:4px;font-size:9px;color:var(--ll);background:rgba(155,126,200,.1);padding:1px 5px;border-radius:7px;}
+.wlabel{background:rgba(92,184,133,.15);border:1px solid rgba(92,184,133,.3);color:#7dc87d;
+  padding:1px 5px;border-radius:7px;font-size:9px;margin-left:4px;}
+.card-btns{display:flex;gap:4px;margin-top:8px;justify-content:flex-end;align-items:center;}
+.icoBtn{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:6px;padding:4px 8px;color:var(--muted);cursor:pointer;font-size:12px;
+  transition:all .2s;font-family:inherit;}
+.icoBtn:hover{background:rgba(232,84,122,.15);border-color:var(--rose);color:var(--rl);}
+.admin-edit-btn{background:rgba(212,168,67,.1);border-color:rgba(212,168,67,.3);color:var(--gold);}
+.status-sel{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:6px;padding:3px 6px;color:var(--muted);font-size:11px;cursor:pointer;
+  font-family:'Noto Sans JP',sans-serif;}
+.grid.list .card{display:grid;grid-template-columns:3px 1fr;}
+.grid.list .card-top{width:3px;height:auto;background:linear-gradient(180deg,var(--rose),var(--lav));}
+.grid.list .cbody{display:grid;grid-template-columns:1fr auto;gap:7px;padding:10px 14px;}
+.grid.list .cleft{min-width:0;}
+.grid.list .cright{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
+.recdots{display:flex;gap:2px;}
+.rdot{width:6px;height:6px;border-radius:50%;background:rgba(232,84,122,.15);}
+.rdot.on{background:var(--rose);}
+.ratept{font-size:12px;color:var(--gold);}
+
+/* 詳細モーダル */
+.overlay{position:fixed;inset:0;background:rgba(10,5,18,.9);backdrop-filter:blur(8px);
+  z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;
+  opacity:0;pointer-events:none;transition:opacity .25s;}
+.overlay.open{opacity:1;pointer-events:all;}
+.modal{background:linear-gradient(160deg,#261833,#1e1228);border:1px solid rgba(155,126,200,.3);
+  border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:rgba(155,126,200,.3) transparent;
+  transform:translateY(20px);transition:transform .25s;}
+.overlay.open .modal{transform:translateY(0);}
+.mhead{padding:18px 18px 12px;position:sticky;top:0;
+  background:linear-gradient(160deg,#261833,#1e1228);z-index:2;
+  border-bottom:1px solid rgba(155,126,200,.15);}
+.mclose{position:absolute;top:13px;right:13px;background:rgba(155,126,200,.1);
+  border:1px solid rgba(155,126,200,.2);border-radius:50%;width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  color:var(--muted);font-size:14px;transition:all .2s;}
+.mclose:hover{background:rgba(232,84,122,.2);color:var(--rl);}
+.mtitle{font-family:'DM Serif Display',serif;font-size:19px;color:var(--text);padding-right:34px;margin-bottom:3px;}
+.mcp{font-size:12px;color:var(--ll);}
+.mbody{padding:14px 18px 18px;}
+.msec{margin-bottom:14px;}
+.mlab{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:4px;}
+.mmlab{font-size:10px;color:var(--muted);margin-bottom:4px;}
+.mcont{font-size:13px;color:var(--text);line-height:1.7;}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px;}
+.mi{background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.12);border-radius:8px;padding:8px 10px;}
+.mi-l{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px;}
+.mi-v{font-size:13px;color:var(--text);}
+.mrate{background:rgba(232,84,122,.06);border:1px solid rgba(232,84,122,.15);
+  border-radius:10px;padding:11px 13px;margin-bottom:14px;}
+.mrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.bigpt{font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--gold);}
+.dbar{display:flex;gap:3px;}
+.dseg{height:5px;flex:1;border-radius:3px;background:rgba(155,126,200,.12);}
+.dseg.on{background:linear-gradient(90deg,var(--lav),var(--ll));}
+.mcomment{margin-top:10px;padding:10px 13px;background:rgba(155,126,200,.06);
+  border-left:3px solid var(--lav);border-radius:0 7px 7px 0;font-size:13px;
+  color:#c4b0d8;line-height:1.7;font-style:italic;margin-bottom:14px;}
+/* 配信テーブル */
+.plat-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
+.plat-table th{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;
+  padding:4px 8px;border-bottom:1px solid rgba(155,126,200,.15);text-align:left;}
+.plat-table td{padding:5px 8px;border-bottom:1px solid rgba(155,126,200,.08);color:var(--text);}
+.chip-sub{font-size:9px;color:var(--muted);margin-left:4px;}
+.chips{display:flex;gap:5px;flex-wrap:wrap;}
+.chip{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;}
+.cyt{background:rgba(255,0,0,.15);border:1px solid rgba(255,0,0,.3);color:#ff7070;}
+.cnf{background:rgba(229,9,20,.12);border:1px solid rgba(229,9,20,.3);color:#e05050;}
+.ciq{background:rgba(0,160,80,.12);border:1px solid rgba(0,160,80,.3);color:#5dc87a;}
+.cwt{background:rgba(100,180,255,.1);border:1px solid rgba(100,180,255,.25);color:#80c8f0;}
+.ctl{background:rgba(140,100,220,.12);border:1px solid rgba(140,100,220,.3);color:#c09cec;}
+.cgg{background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.25);color:#ffc050;}
+.crk{background:rgba(180,20,20,.12);border:1px solid rgba(180,20,20,.3);color:#e07070;}
+.cot{background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);color:var(--ll);}
+/* リンク */
+.ext-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+.ext-link{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;
+  background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:20px;color:var(--ll);font-size:12px;text-decoration:none;transition:all .2s;}
+.ext-link:hover{background:rgba(155,126,200,.2);border-color:var(--lav);}
+/* ユーザーセクション */
+.user-section{margin-top:14px;padding:14px;background:rgba(155,126,200,.06);
+  border:1px solid rgba(155,126,200,.15);border-radius:10px;}
+.user-fields{display:flex;flex-direction:column;gap:12px;}
+.uf-row{display:flex;flex-direction:column;gap:5px;}
+.uf-row label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);}
+textarea{width:100%;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);
+  border-radius:8px;padding:9px 11px;color:var(--text);font-family:'Noto Sans JP',sans-serif;
+  font-size:13px;outline:none;resize:vertical;min-height:72px;margin-top:4px;}
+textarea:focus{border-color:var(--lav);}
+.saveNoteBtn{margin-top:6px;background:rgba(155,126,200,.15);border:1px solid rgba(155,126,200,.3);
+  border-radius:8px;padding:7px 16px;color:var(--ll);cursor:pointer;font-size:13px;
+  font-family:'Noto Sans JP',sans-serif;transition:all .2s;align-self:flex-start;}
+.saveNoteBtn:hover{background:rgba(155,126,200,.25);}
+.login-prompt{margin-top:14px;}
+.googleBtn{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:9px 16px;
+  color:var(--text);cursor:pointer;font-family:'Noto Sans JP',sans-serif;font-size:13px;
+  transition:all .2s;width:100%;justify-content:center;}
+.googleBtn:hover{background:rgba(255,255,255,.12);}
+.admin-section{margin-top:12px;padding:12px;background:rgba(212,168,67,.05);
+  border:1px solid rgba(212,168,67,.15);border-radius:10px;}
+.adminActBtn{background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);
+  border-radius:8px;padding:7px 14px;color:var(--gold);cursor:pointer;font-size:13px;
+  font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+.adminActBtn:hover{background:rgba(212,168,67,.2);}
+.adminActBtn.danger{background:rgba(232,84,122,.1);border-color:rgba(232,84,122,.25);color:var(--rl);}
+.adminActBtn.danger:hover{background:rgba(232,84,122,.2);}
+
+/* 管理者フォームモーダル */
+.admin-overlay{position:fixed;inset:0;background:rgba(10,5,18,.92);backdrop-filter:blur(8px);
+  z-index:2000;display:flex;align-items:center;justify-content:center;padding:14px;
+  opacity:0;pointer-events:none;transition:opacity .25s;}
+.admin-overlay.open{opacity:1;pointer-events:all;}
+.admin-modal{background:linear-gradient(160deg,#1a1230,#150e22);
+  border:1px solid rgba(212,168,67,.3);border-radius:16px;
+  max-width:720px;width:100%;max-height:92vh;overflow-y:auto;scrollbar-width:thin;padding:0;}
+.am-head{padding:16px 18px 12px;border-bottom:1px solid rgba(212,168,67,.15);
+  display:flex;justify-content:space-between;align-items:center;
+  position:sticky;top:0;background:linear-gradient(160deg,#1a1230,#150e22);z-index:2;}
+.am-head h2{font-family:'DM Serif Display',serif;font-size:18px;color:var(--gold);}
+.am-close{background:none;border:1px solid rgba(212,168,67,.2);border-radius:50%;width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:14px;}
+.am-body{padding:16px 18px 10px;}
+.am-section{margin-bottom:18px;}
+.am-section-title{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);
+  margin-bottom:10px;padding-bottom:5px;border-bottom:1px solid rgba(212,168,67,.15);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.form-group{display:flex;flex-direction:column;gap:4px;}
+.form-group.full{grid-column:1/-1;}
+.form-group label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.form-group input,.form-group select,.form-group textarea{
+  background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);
+  border-radius:8px;padding:7px 10px;color:var(--text);
+  font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--gold);}
+.form-group textarea{resize:vertical;min-height:58px;}
+.form-group select option{background:var(--dark2);}
+/* 視聴媒体行 */
+.plat-row{display:flex;gap:5px;align-items:center;margin-bottom:5px;flex-wrap:wrap;}
+.plat-row select{flex:1;min-width:80px;font-size:12px;padding:5px 6px;}
+.plat-del{background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.25);
+  color:var(--rl);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0;}
+.plat-add-btn{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:8px;padding:5px 12px;color:var(--ll);cursor:pointer;font-size:12px;
+  font-family:'Noto Sans JP',sans-serif;margin-top:5px;transition:all .2s;}
+.plat-add-btn:hover{background:rgba(155,126,200,.15);}
+/* URL配列行 */
+.url-row{display:flex;gap:5px;align-items:center;margin-bottom:5px;}
+.url-row input{flex:1;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);
+  border-radius:8px;padding:6px 10px;color:var(--text);font-size:12px;font-family:'Noto Sans JP',sans-serif;outline:none;}
+.url-row input:focus{border-color:var(--gold);}
+/* チェックボックス */
+.checkbox-row{display:flex;align-items:center;gap:8px;padding:6px 0;}
+.checkbox-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--gold);cursor:pointer;}
+.checkbox-row label{font-size:13px;color:var(--text);cursor:pointer;}
+.am-footer{padding:10px 18px 16px;display:flex;gap:8px;justify-content:flex-end;
+  border-top:1px solid rgba(212,168,67,.1);}
+.am-save{background:rgba(212,168,67,.2);border:1px solid rgba(212,168,67,.4);
+  border-radius:8px;padding:9px 20px;color:var(--gold);cursor:pointer;font-size:13px;
+  font-family:'Noto Sans JP',sans-serif;font-weight:700;transition:all .2s;}
+.am-save:hover{background:rgba(212,168,67,.35);}
+.am-cancel{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:8px;padding:9px 16px;color:var(--muted);cursor:pointer;font-size:13px;
+  font-family:'Noto Sans JP',sans-serif;}
+.rate-hint{font-size:10px;color:var(--muted);margin-top:2px;}
+
+.toast{position:fixed;bottom:24px;right:24px;z-index:9999;
+  background:rgba(40,25,55,.95);border:1px solid rgba(155,126,200,.3);
+  border-radius:12px;padding:11px 18px;font-size:13px;color:var(--text);
+  transform:translateY(20px);opacity:0;transition:all .3s;pointer-events:none;max-width:300px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.error{border-color:rgba(232,84,122,.5);color:var(--rl);}
+.toast.warn{border-color:rgba(212,168,67,.4);color:var(--gold);}
+.empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-i{font-size:44px;margin-bottom:10px;}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-thumb{background:rgba(155,126,200,.3);border-radius:3px;}
+@media(max-width:600px){
+  .hero h1{font-size:1.6rem;}.ctrl-row{gap:5px;}.mgrid{grid-template-columns:1fr;}
+  .grid{grid-template-columns:1fr;}.update-note,.auth-bar #userName{display:none;}
+  .form-grid{grid-template-columns:1fr;}.plat-row{flex-direction:column;align-items:stretch;}
+}
+
+/* ============================================================
+   [SECTION: SIDEBAR]
+   サイドバーのCSSはここにまとめています。
+   追加・変更する場合はこのブロック内で行ってください。
+   ============================================================ */
+
+/* レイアウト */
+.page-layout {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar-wrap {
+  width: 240px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: #140d1f;
+  border-right: 1px solid rgba(155,126,200,.15);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(155,126,200,.2) transparent;
+  z-index: 200;
+  transition: width .25s;
+}
+.sidebar-wrap.collapsed { width: 52px; }
+.main-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* サイドバーヘッダー */
+.sb-header {
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid rgba(155,126,200,.12);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+}
+.sb-logo-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--lav), var(--rose));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 15px;
+}
+.sb-logo-text {
+  font-family: 'DM Serif Display', serif;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sb-logo-sub {
+  font-size: 10px;
+  color: var(--muted);
+}
+.sb-toggle {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  transition: color .2s;
+}
+.sb-toggle:hover { color: var(--text); }
+.sidebar-wrap.collapsed .sb-logo-text,
+.sidebar-wrap.collapsed .sb-logo-sub { display: none; }
+
+/* ナビゲーション */
+.sb-body { padding: 8px 0 24px; }
+.sb-section-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(155,126,200,.5);
+  padding: 10px 14px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sidebar-wrap.collapsed .sb-section-label { opacity: 0; height: 0; padding: 0; }
+
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: 'Noto Sans JP', sans-serif;
+}
+.sb-item:hover {
+  background: rgba(155,126,200,.08);
+  color: var(--text);
+}
+.sb-item.active {
+  color: var(--rl);
+  background: rgba(232,84,122,.08);
+}
+.sb-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--rose);
+}
+.sb-item-sub {
+  padding-left: 38px;
+  font-size: 12px;
+  color: rgba(155,126,200,.6);
+}
+.sb-item-sub:hover { color: var(--muted); }
+
+.sb-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.si-purple { background: rgba(155,126,200,.15); color: var(--ll); }
+.si-pink   { background: rgba(232,84,122,.12);  color: var(--rl); }
+.si-teal   { background: rgba(92,184,133,.12);  color: #7dc87d; }
+.si-gold   { background: rgba(212,168,67,.12);  color: var(--gold); }
+.si-gray   { background: rgba(155,126,200,.08); color: var(--muted); }
+
+.sidebar-wrap.collapsed .sb-item span:not(.sb-icon),
+.sidebar-wrap.collapsed .sb-badge { display: none; }
+.sidebar-wrap.collapsed .sb-item { justify-content: center; padding: 8px; }
+.sidebar-wrap.collapsed .sb-item-sub { display: none; }
+
+.sb-badge {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.b-purple { background: rgba(155,126,200,.2);  color: var(--ll); }
+.b-pink   { background: rgba(232,84,122,.15);  color: var(--rl); }
+.b-gold   { background: rgba(212,168,67,.15);  color: var(--gold); }
+
+.sb-divider {
+  border: none;
+  border-top: 1px solid rgba(155,126,200,.1);
+  margin: 5px 0;
+}
+
+/* モバイル: サイドバーをオーバーレイに */
+.sb-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 199;
+}
+.sb-mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 300;
+  background: rgba(26,18,32,.9);
+  border: 1px solid rgba(155,126,200,.3);
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 16px;
+  backdrop-filter: blur(8px);
+}
+@media (max-width: 768px) {
+  .sb-mobile-toggle { display: flex; align-items: center; }
+  .page-layout { display: block; }
+  .sidebar-wrap {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    height: 100vh;
+    width: 240px !important;
+    z-index: 250;
+    transition: left .25s;
+  }
+  .sidebar-wrap.mobile-open { left: 0; }
+  .sb-overlay.show { display: block; }
+  .hero { padding-top: 60px; }
+  .auth-bar { left: 52px; }
+}
+/* ============================================================
+   [END SECTION: SIDEBAR]
+   ============================================================ */
+
+</style>
+
+</head>
+<body>
+
+<!-- ============================================================
+     [SECTION: SIDEBAR HTML]
+     サイドバーのHTMLはここです。
+     メニュー項目の追加・変更はここで行ってください。
+     ============================================================ -->
+
+<!-- モバイル用ハンバーガーボタン -->
+<button class="sb-mobile-toggle" onclick="sbToggleMobile()" aria-label="メニュー">☰</button>
+<!-- モバイル用オーバーレイ -->
+<div class="sb-overlay" id="sbOverlay" onclick="sbCloseMobile()"></div>
+
+<div class="page-layout">
+
+  <!-- ▼▼▼ サイドバー ▼▼▼ -->
+  <nav class="sidebar-wrap" id="sidebar" aria-label="サイドナビゲーション">
+    <div class="sb-header">
+      <div class="sb-logo-icon">🌸</div>
+      <div>
+        <div class="sb-logo-text">Cory's GL Guide</div>
+        <div class="sb-logo-sub">タイGLレビューサイト</div>
+      </div>
+      <button class="sb-toggle" onclick="sbToggleCollapse()" title="サイドバーを折りたたむ">◀</button>
+    </div>
+
+    <div class="sb-body">
+
+      <!-- 作品を見る -->
+      <div class="sb-section-label">作品を見る</div>
+
+      <button class="sb-item active" id="sb-all" onclick="sbNav('all')">
+        <span class="sb-icon si-purple">🎬</span>
+        <span>全ての作品</span>
+      </button>
+      <button class="sb-item sb-item-sub" onclick="sbNav('status-done')">放送済み</button>
+      <button class="sb-item sb-item-sub" onclick="sbNav('status-now')">放送中</button>
+      <button class="sb-item sb-item-sub" onclick="sbNav('status-pre')">放送前</button>
+
+      <hr class="sb-divider">
+
+      <!-- 評価で絞り込む -->
+      <div class="sb-section-label">評価で見る</div>
+
+      <button class="sb-item" id="sb-rated" onclick="sbNav('rated')">
+        <span class="sb-icon si-gold">⭐</span>
+        <span>評価あり</span>
+      </button>
+      <button class="sb-item" id="sb-top" onclick="sbNav('top')">
+        <span class="sb-icon si-pink">★</span>
+        <span>★5オススメのみ</span>
+      </button>
+
+      <hr class="sb-divider">
+
+      <!-- マイリスト（ログイン時） -->
+      <div class="sb-section-label">マイリスト</div>
+
+      <button class="sb-item" id="sb-watched" onclick="sbNav('watched')">
+        <span class="sb-icon si-teal">✓</span>
+        <span>視聴済み</span>
+        <span class="sb-badge b-purple" id="sb-watched-count" style="display:none">0</span>
+      </button>
+      <button class="sb-item" id="sb-watching" onclick="sbNav('watching')">
+        <span class="sb-icon si-teal">▶</span>
+        <span>視聴中</span>
+      </button>
+
+      <hr class="sb-divider">
+
+      <!-- 俳優から探す（将来実装） -->
+      <div class="sb-section-label">俳優から探す</div>
+
+      <button class="sb-item" onclick="showToast('近日公開予定です', 'warn')">
+        <span class="sb-icon si-teal">👩</span>
+        <span>名前で探す</span>
+        <span class="sb-badge b-purple">準備中</span>
+      </button>
+      <button class="sb-item" onclick="showToast('近日公開予定です', 'warn')">
+        <span class="sb-icon si-teal">📋</span>
+        <span>出演作品で探す</span>
+        <span class="sb-badge b-purple">準備中</span>
+      </button>
+
+      <hr class="sb-divider">
+
+      <!-- 管理者（管理者のみ表示） -->
+      <div class="sb-section-label admin-only" id="sb-admin-section" style="display:none">管理者</div>
+
+      <button class="sb-item admin-only" id="sb-admin-add" style="display:none" onclick="openAdminAdd()">
+        <span class="sb-icon si-gold">＋</span>
+        <span>作品を追加</span>
+      </button>
+      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
+        <span class="sb-icon si-gold">⬆</span>
+        <span>データ移行</span>
+        <span class="sb-badge b-gold">管理者</span>
+      </button>
+
+      <hr class="sb-divider">
+
+      <!-- その他 -->
+      <div class="sb-section-label">その他</div>
+
+      <a class="sb-item" href="https://x.com/cory_fbshipper" target="_blank">
+        <span class="sb-icon si-gray">𝕏</span>
+        <span>＠cory_fbshipper</span>
+      </a>
+
+    </div><!-- /.sb-body -->
+  </nav>
+  <!-- ▲▲▲ サイドバーここまで ▲▲▲ -->
+
+  <!-- ▼▼▼ メインコンテンツ ▼▼▼ -->
+  <div class="main-wrap" id="mainWrap">
+<!-- [END SECTION: SIDEBAR HTML] -->
+
+<div class="hero">
+  <div class="auth-bar">
+    <button id="loginBtn" onclick="loginWithGoogle()">
+      <img src="https://www.google.com/favicon.ico" width="14" height="14"> Googleでログイン
+    </button>
+    <div id="userPanel">
+      <img id="userAvatar" src="" alt="" style="display:none">
+      <span id="userName"></span>
+      <span id="adminBadge">👑 管理者</span>
+      <button class="logout-btn" onclick="logout()">ログアウト</button>
+    </div>
+  </div>
+  <div class="update-note">＠cory_fbshipper 2026/03更新</div>
+  <div class="petals" id="petals"></div>
+  <h1>🌸 タイGL作品一覧</h1>
+  <p class="hero-sub">Thai Girls Love Drama Complete Guide</p>
+  <div class="hero-stats">
+    <div><div class="stat-num" id="sTotal">-</div><div class="stat-label">総作品数</div></div>
+    <div><div class="stat-num" id="sRated">-</div><div class="stat-label">レート済み</div></div>
+    <div><div class="stat-num" id="sTop">-</div><div class="stat-label">★5オススメ</div></div>
+    <div><div class="stat-num" id="sUpcoming">-</div><div class="stat-label">今後予定</div></div>
+  </div>
+</div>
+
+<div id="statsRow" style="display:none"></div>
+
+<div class="controls">
+  <div class="ctrl-row">
+    <div class="srch"><input type="text" id="q" placeholder="タイトル・CP・あらすじで検索..."></div>
+    <select id="srt">
+      <option value="new">新しい順</option><option value="old">古い順</option>
+      <option value="rhi">評価高い順</option><option value="rlo">評価低い順</option>
+      <option value="rec">オススメ順</option><option value="az">タイトル順</option>
+    </select>
+    <select id="rel">
+      <option value="">関係値すべて</option>
+      <option value="先輩後輩">先輩後輩</option><option value="同い年">同い年</option>
+      <option value="歳の差">歳の差</option><option value="同世代">同世代</option><option value="関係なし">関係なし</option>
+    </select>
+    <select id="plt">
+      <option value="">配信すべて</option>
+      <option value="Youtube">YouTube</option><option value="Netflix">Netflix</option>
+      <option value="iQIYI">iQIYI</option><option value="WeTV">WeTV</option>
+      <option value="Telasa">Telasa</option><option value="GagaOOLala">GagaOOLala</option>
+      <option value="楽天">楽天</option><option value="FOD">FOD</option>
+    </select>
+    <div class="btn-grp">
+      <button class="btn active" id="vg" onclick="setView('g')">⊞</button>
+      <button class="btn" id="vl" onclick="setView('l')">☰</button>
+    </div>
+    <div class="btn-grp">
+      <button class="btn active" id="fa" onclick="setF('a')">全部</button>
+      <button class="btn" id="fr" onclick="setF('r')">評価あり</button>
+      <button class="btn" id="ft" onclick="setF('t')">★5のみ</button>
+      <button class="btn" id="fw" onclick="setF('w')" style="display:none">✓ 視聴済み</button>
+      <button class="btn" id="ffav" onclick="setF('fav')" style="display:none">▶ 視聴中</button>
+    </div>
+    <div class="cnt" id="cnt">- 件</div>
+    <button class="admin-add-btn admin-only" onclick="openAdminAdd()" style="display:none">＋ 作品追加</button>
+    <button class="upload-btn admin-only" onclick="uploadBuiltinToFirestore()" style="display:none">⬆ データ移行</button>
+  </div>
+</div>
+
+<!-- ステータスフィルターバー -->
+<div class="status-bar">
+  <span class="status-bar-label">放送：</span>
+  <button class="status-btn" data-s="放送済み" onclick="setStatusF('放送済み')">放送済み</button>
+  <button class="status-btn" data-s="放送中" onclick="setStatusF('放送中')">放送中</button>
+  <button class="status-btn" data-s="放送前" onclick="setStatusF('放送前')">放送前</button>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<div class="gwrap">
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none"><div class="empty-i">🌺</div><div>条件に合う作品が見つかりません</div></div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="overlay" id="ov" onclick="closeM(event)">
+  <div class="modal">
+    <div class="mhead">
+      <button class="mclose" onclick="closeMD()">✕</button>
+      <div class="mtitle" id="mt"></div>
+      <div class="mcp" id="mc"></div>
+    </div>
+    <div class="mbody" id="mb"></div>
+  </div>
+</div>
+
+<!-- 管理者編集モーダル -->
+<div class="admin-overlay" id="adminModal">
+  <div class="admin-modal">
+    <div class="am-head">
+      <h2 id="adminModalTitle">作品を追加</h2>
+      <button class="am-close" onclick="closeAdminModal()">✕</button>
+    </div>
+    <div class="am-body">
+      <input type="hidden" id="adminDramaId">
+
+      <!-- 基本情報 -->
+      <div class="am-section">
+        <div class="am-section-title">📋 基本情報</div>
+        <div class="form-grid">
+          <div class="form-group full"><label>タイトル *</label><input type="text" id="af_title"></div>
+          <div class="form-group">
+            <label>放送開始日</label>
+            <input type="text" id="af_release_start" placeholder="2025-08-22　月のみ: 2025-08-01　未定: 未定">
+          </div>
+          <div class="form-group">
+            <label>放送終了日</label>
+            <input type="text" id="af_release_end" placeholder="2025-10-31（放送中は空欄OK）">
+          </div>
+          <div class="form-group"><label>制作会社</label><input type="text" id="af_studio"></div>
+          <div class="form-group">
+            <label>Coryステータス</label>
+            <select id="af_cory_status">
+              <option>未視聴</option><option>視聴中</option><option>視聴済み</option><option>Drop out</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- キャスト・CP -->
+      <div class="am-section">
+        <div class="am-section-title">🎭 キャスト・CP</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Top 俳優名</label><input type="text" id="af_cp_top" placeholder="例: Freen"></div>
+          <div class="form-group"><label>Bottom 俳優名</label><input type="text" id="af_cp_bottom" placeholder="例: Becky"></div>
+        </div>
+      </div>
+
+      <!-- 作品時間 -->
+      <div class="am-section">
+        <div class="am-section-title">⏱ 作品時間</div>
+        <div class="form-grid">
+          <div class="form-group"><label>話数</label><input type="number" id="af_ep_count" min="0" placeholder="12"></div>
+          <div class="form-group"><label>1話あたりの分数</label><input type="number" id="af_ep_minutes" min="0" placeholder="45"></div>
+        </div>
+        <div class="rate-hint">合計時間 (duration) は 話数 × 分数 ÷ 60 で自動計算されます</div>
+      </div>
+
+      <!-- ストーリー・原作 -->
+      <div class="am-section">
+        <div class="am-section-title">📖 ストーリー・原作</div>
+        <div class="form-grid">
+          <div class="form-group full"><label>あらすじ</label><textarea id="af_synopsis" rows="3"></textarea></div>
+          <div class="form-group full">
+            <div class="checkbox-row">
+              <input type="checkbox" id="af_has_original" onchange="toggleOriginalFields()">
+              <label for="af_has_original">原作あり</label>
+            </div>
+            <div id="original_fields" style="display:none">
+              <div class="form-grid" style="margin-top:6px">
+                <div class="form-group"><label>原作作品名</label><input type="text" id="af_original_title"></div>
+                <div class="form-group"><label>原作者</label><input type="text" id="af_original_author"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 視聴可能媒体 -->
+      <div class="am-section">
+        <div class="am-section-title">📺 視聴可能媒体（複数追加可）</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">媒体 / VPN / 字幕 / cut-uncut / 料金 の順で入力してください</div>
+        <div id="platform_rows"></div>
+        <button type="button" class="plat-add-btn" onclick="platAdd()">＋ 媒体を追加</button>
+      </div>
+
+      <!-- Cory評価 -->
+      <div class="am-section">
+        <div class="am-section-title">⭐ Cory評価</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>おすすめ度（0〜5、小数可）</label>
+            <input type="number" id="af_recommend" min="0" max="5" step="0.1" value="0">
+          </div>
+          <div class="form-group">
+            <label>初心者向けスコア（5=初心者向け / 0=上級者向け）</label>
+            <input type="number" id="af_beginner_score" min="0" max="5" step="0.1" value="0">
+          </div>
+        </div>
+        <div class="rate-hint">総合点 (rate) = おすすめ度 × 初心者向けスコア で自動計算（最大25）</div>
+        <div class="form-grid" style="margin-top:9px">
+          <div class="form-group full"><label>Coryコメント・感想</label><textarea id="af_comment" rows="3"></textarea></div>
+        </div>
+      </div>
+
+      <!-- 分類 -->
+      <div class="am-section">
+        <div class="am-section-title">🏷 分類</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>関係値</label>
+            <select id="af_relation">
+              <option value="">─</option>
+              <option>先輩後輩</option><option>同い年</option><option>歳の差</option>
+              <option>同世代</option><option>関係なし</option><option>不明</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>GL/BL分類</label>
+            <select id="af_is_subcap">
+              <option value="GL主演">GL主演</option>
+              <option value="BLサブカプ">BLサブカプ</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- リンク -->
+      <div class="am-section">
+        <div class="am-section-title">🔗 リンク</div>
+        <div class="form-grid">
+          <div class="form-group full"><label>MyDramaList URL</label><input type="url" id="af_mdl_url" placeholder="https://mydramalist.com/..."></div>
+          <div class="form-group"><label>公式 X (Twitter) URL</label><input type="url" id="af_sns_x" placeholder="https://x.com/..."></div>
+          <div class="form-group"><label>公式 Instagram URL</label><input type="url" id="af_sns_ig" placeholder="https://instagram.com/..."></div>
+        </div>
+        <div style="margin-top:10px">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Pilot URL（複数可）</div>
+          <div id="pilot_urls_rows"></div>
+          <button type="button" class="plat-add-btn" onclick="urlArrAdd('pilot_urls')">＋ Pilot URLを追加</button>
+        </div>
+        <div style="margin-top:10px">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">OST URL（複数可）</div>
+          <div id="ost_urls_rows"></div>
+          <button type="button" class="plat-add-btn" onclick="urlArrAdd('ost_urls')">＋ OST URLを追加</button>
+        </div>
+      </div>
+
+    </div><!-- /.am-body -->
+    <div class="am-footer">
+      <button class="am-cancel" onclick="closeAdminModal()">キャンセル</button>
+      <button class="am-save" onclick="submitAdminForm()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+
+/* ============================================================
+   [SECTION: SIDEBAR JS]
+   サイドバーのJavaScriptはここにまとめています。
+   ============================================================ */
+
+// サイドバーの折りたたみ
+window.sbToggleCollapse = function() {
+  const sb = document.getElementById('sidebar');
+  const collapsed = sb.classList.toggle('collapsed');
+  const btn = sb.querySelector('.sb-toggle');
+  btn.textContent = collapsed ? '▶' : '◀';
+  localStorage.setItem('sbCollapsed', collapsed ? '1' : '0');
+};
+
+// モバイル開閉
+window.sbToggleMobile = function() {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+  document.getElementById('sbOverlay').classList.toggle('show');
+};
+window.sbCloseMobile = function() {
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('sbOverlay').classList.remove('show');
+};
+
+// サイドバーナビ：既存のsetF / setStatusFと連動
+window.sbNav = function(key) {
+  // モバイルは閉じる
+  sbCloseMobile();
+  // アクティブ状態をリセット
+  document.querySelectorAll('.sb-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('sb-' + key)?.classList.add('active');
+
+  // メインのフィルターを操作
+  if (key === 'all')      { STATUS_F = ''; setF('a'); }
+  if (key === 'rated')    { STATUS_F = ''; setF('r'); }
+  if (key === 'top')      { STATUS_F = ''; setF('t'); }
+  if (key === 'watched')  { STATUS_F = ''; setF('w'); }
+  if (key === 'watching') { STATUS_F = ''; setF('fav'); }
+  if (key === 'status-done') { setF('a'); STATUS_F='放送済み'; render(); highlightStatusBtn('放送済み'); }
+  if (key === 'status-now')  { setF('a'); STATUS_F='放送中';   render(); highlightStatusBtn('放送中'); }
+  if (key === 'status-pre')  { setF('a'); STATUS_F='放送前';   render(); highlightStatusBtn('放送前'); }
+
+  // スクロールをトップに
+  document.getElementById('mainWrap').scrollTo(0, 0);
+  window.scrollTo(0, 0);
+};
+
+function highlightStatusBtn(s) {
+  document.querySelectorAll('.status-btn').forEach(el =>
+    el.classList.toggle('active', el.dataset.s === s)
+  );
+}
+
+// サイドバーのカウント・状態をrenderに連動して更新
+function updateSidebarState() {
+  // 視聴済みカウント
+  const wc = Object.values(userDoc.dramas||{}).filter(v => v.status === '視聴済み').length;
+  const wcEl = document.getElementById('sb-watched-count');
+  if (wcEl) {
+    wcEl.textContent = wc;
+    wcEl.style.display = wc > 0 ? '' : 'none';
+  }
+}
+
+// 折りたたみ状態を復元
+(function() {
+  try {
+    if (localStorage.getItem('sbCollapsed') === '1') {
+      const sb = document.getElementById('sidebar');
+      if (sb) {
+        sb.classList.add('collapsed');
+        const btn = sb.querySelector('.sb-toggle');
+        if (btn) btn.textContent = '▶';
+      }
+    }
+  } catch(e) {}
+})();
+
+/* [END SECTION: SIDEBAR JS] */
+
+</script>
+
+<script>
+// ── フォールバック用 組み込みデータ ────────────────────────────────────
+// Firestoreが空またはオフラインのときだけ使われます
+// （loadDramasFromDB の catch節で localDramas にセットされます）
+const BUILTIN_DRAMAS = [{"title":"Bad buddy","relation":"先輩後輩","synopsis":"隣同士でいがみ合っている家族にそれぞれ生まれた息子たちは、互いに親から聞かされている様子とは違う相手の良いところに惹かれ合う、現代BL版ロミオとジュリエット！その家庭の妹のPaと学校の先輩Inkの話","platform":"Youtube/Telasa","subtitle":"fan sub/完備","vpn":"なし","original":"なし","studio":"GMM","cp":"MilkLove","duration":"12","difficulty":2,"recommend":4,"rate":8,"release":"2021-10","year":"2021","sort_date":"2021-10","notes":"Telasaで配信も、Youtube VPNなし。BLのサブカプ。忖度ドラマMagic of zeroでオムニバスもあり","comment":""},{"title":"Secret Crush On You","relation":"同い年","synopsis":"?","platform":"楽天/Youtube","subtitle":"完備/自動翻訳","vpn":"あり","original":"?","studio":"IDF","cp":"FreenBecky","duration":"15","difficulty":2,"recommend":3,"rate":6,"release":"2022-02","year":"2022","sort_date":"2022-02","notes":"BLのサブカプ","comment":""},{"title":"GAP","relation":"歳の差","synopsis":"歳の差、身分の差、立場の差、何もかも違う二人だけど、あってもよかった性別の差。祖母の重圧から感情を無くしたSamと、幼い頃に助けてもらい憧れ続けSamの会社に入社した新入社員MonがSamの心を溶かしていく","platform":"Telasa/DMM/FOD/Youtube","subtitle":"完備","vpn":"あり","original":"チャオプラノイ","studio":"IDF","cp":"FreenBecky","duration":"12","difficulty":4,"recommend":5,"rate":20,"release":"2022-10","year":"2022","sort_date":"2022-10","notes":"日本のみVPN","comment":""},{"title":"show me love","relation":"先輩後輩","synopsis":"ミスグランドタイを決める裏側で起きた二人の物語？実話が元になってるらしい??","platform":"Youtube","subtitle":"fan sub","vpn":"なし","original":"オリジナル","studio":"GrandTV","cp":"EngLot","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2023-05","year":"2023","sort_date":"2023-05","notes":"","comment":""},{"title":"Lucky my love","relation":"先輩後輩","synopsis":"同じ会社の先輩後輩、とあることがきっかけで時が止まっている先輩Weaの心をほぐし、時計を動かす健気な後輩Nabdao","platform":"Youtube","subtitle":"完備","vpn":"なし","original":"オリジナル","studio":"K11D","cp":"BmineNear","duration":"1.5","difficulty":4,"recommend":4,"rate":16,"release":"2023-10","year":"2023","sort_date":"2023-10","notes":"","comment":""},{"title":"Love senior","relation":"先輩後輩","synopsis":"舞台はタイの工学部。先輩に一目惚れした新入生Manaowと、新入生を待ち受けるSOTUSを仕切る生徒会の学年長Gyoza。お互いの立場もありながら、ManaowはGyozaの心を捉えられるのか？","platform":"Youtube/GagaOOLala/iQIYI","subtitle":"fan sub","vpn":"なし","original":"Karanda","studio":"Star hunter","cp":"AndaLookeaw","duration":"10","difficulty":2,"recommend":5,"rate":10,"release":"2023-11","year":"2023","sort_date":"2023-11","notes":"Youtue cut ver/有料配信でUncut","comment":""},{"title":"The sign","relation":"?","synopsis":"BLは警察学校の話、FayMayは主人公の妹とその友達","platform":"Telasa/Youtube","subtitle":"完備","vpn":"あり","original":"I-Rain-Yia","studio":"IDF","cp":"FayMay","duration":"13","difficulty":0,"recommend":0,"rate":0,"release":"2023-11","year":"2023","sort_date":"2023-11","notes":"BLのサブカプ","comment":""},{"title":"23.5","relation":"同い年","synopsis":"SNSで見ていた可愛い女の子が転校先に!? 引っ込み思案なオンサーと活発な女の子サンの青春甘酸っぱい爽やか物語","platform":"Telasa/Youtube/Netflix","subtitle":"完備","vpn":"あり","original":"Blue","studio":"GMM","cp":"MilkLove","duration":"12","difficulty":5,"recommend":5,"rate":25,"release":"2024-03","year":"2024","sort_date":"2024-03","notes":"","comment":""},{"title":"Blank","relation":"歳の差","synopsis":"もう愛なんていらない。そこに現れたのは16も下の同級生の娘。もう少し早く産まれていれば良かったのかな？","platform":"Youtube","subtitle":"fan sub","vpn":"なし","original":"チャオプラノイ","studio":"9star","cp":"FayeYoko","duration":"12","difficulty":4,"recommend":5,"rate":20,"release":"2024-03","year":"2024","sort_date":"2024-03","notes":"","comment":""},{"title":"The Two of us","relation":"同い年","synopsis":"おねゆり","platform":"Youtube/iQIYI","subtitle":"自動翻訳","vpn":"あり","original":"？","studio":"Deep night the series","cp":"TanyaNing","duration":"2","difficulty":2,"recommend":1,"rate":2,"release":"2024-05","year":"2024","sort_date":"2024-05","notes":"おねゆり、BL\"Deep night\"からの派生","comment":""},{"title":"Dream","relation":"同い年","synopsis":"夢で出会った女の子が隣に越して来た?!家族・社会に阻まれずっと愛を伝えられなかった二人が一緒になれる日は来るのか","platform":"Youtube","subtitle":"fan sub","vpn":"なし","original":"チャオプラノイ","studio":"IDF","cp":"FayMay","duration":"12","difficulty":3,"recommend":2,"rate":6,"release":"2024-05","year":"2024","sort_date":"2024-05","notes":"","comment":""},{"title":"Love sea","relation":"先輩後輩","synopsis":"恋愛小説家のTongrakは執筆のため南の島を訪れる。そこでお世話係として迎えに来たのが島の青年Mahasamutだった。GL部分はTongrakの秘書Kaimookと女優のVivieの話。","platform":"楽天/FOD/Youtube","subtitle":"完備/自動翻訳","vpn":"あり","original":"?","studio":"Me Mind Y","cp":"ChanyaAya","duration":"11","difficulty":0,"recommend":0,"rate":0,"release":"2024-06","year":"2024","sort_date":"2024-06","notes":"BLのサブカプ。#vimookで検索。Becky出演のTharnTypeと同じ制作会社、日本版リメイクはFODで配信、元櫻坂・土生瑞穂が出演しています","comment":""},{"title":"The secret of us","relation":"先輩後輩","synopsis":"留学先のアメリカで出会い愛を育んだ二人、Earnはタイに残した母親が急病に罹ったことを知り医師のパートナーLadaの家の大病院にLadaの母親の便宜で治療が受けられることになります。その引き換えにLadaの母親に別れを迫れたEarn。好きな男性がいるとLadaを振ってタイに戻ります。数年後再開した二人は…","platform":"Youtube/Netflix/ch3 apps","subtitle":"fan sub","vpn":"あり","original":"Mee Nam","studio":"ch3","cp":"LingOrm","duration":"8","difficulty":5,"recommend":3,"rate":15,"release":"2024-06","year":"2024","sort_date":"2024-06","notes":"Youtubeは3話まで、以降はVPN Netflixか、ch3 app","comment":""},{"title":"Love Bully","relation":"先輩後輩","synopsis":"長い間海外にいた不動産会社の令嬢Irinと、しがないバーの娘Night。Irinは親に愛されず反発した行動を取りますが一方で会社を乗っ取ろうとする勢力に同性愛者であることを脅しのネタにされます。Nightは家族が社会から認められない存在が故に過去の交際相手に仕打ちを受けそれ以降恋愛を避けるようになっていました。しかし家族からの愛を受け育ちました。家族の愛を受けたNightと受けられなかったIrin、お互いが持っていないものを補うように交際を進めます。","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"オリジナル","studio":"Change2561","cp":"EngLot","duration":"4","difficulty":2,"recommend":3,"rate":6,"release":"2024-06","year":"2024","sort_date":"2024-06","notes":"","comment":""},{"title":"sunset x vibes","relation":"先輩後輩","synopsis":"ジュエリー会社のインターンにきたPimと、デザイナーの若手エースPrim。実は学生時代からPrimはPimのことが好きでしたが、Pimは好きと言われると付き合ってしまう性格で長年思いを伝えられずにいました。","platform":"iQIYI/Youtube","subtitle":"自動翻訳","vpn":"なし","original":"オリジナル","studio":"Star hunter","cp":"AndaLookaew\nNoonPraewa","duration":"12","difficulty":3,"recommend":3,"rate":9,"release":"2024-06","year":"2024","sort_date":"2024-06","notes":"BLのサブカプ。BLは原作あり、GL部分はオリジナルと思われる。","comment":""},{"title":"Uranus2324","relation":"同い年","synopsis":"どんな時代でどんな時も、あなたの側に居たいから。時空を超え、パラレルワールドを超え、お互いの命を救うために奮闘する二人の物語","platform":"劇場/タイVPNでNetflix","subtitle":"あり","vpn":"─","original":"オリジナル","studio":"VelCurveStudio","cp":"FreenBecky","duration":"2~4","difficulty":3,"recommend":5,"rate":15,"release":"2024-07","year":"2024","sort_date":"2024-07","notes":"","comment":""},{"title":"The Loyal Pin","relation":"先輩後輩","synopsis":"時は1950年代、王室で繰り広げられる時代劇純愛ストーリー","platform":"Telasa/Youtube","subtitle":"完備","vpn":"あり","original":"Monmaw","studio":"IDF","cp":"FreenBecky","duration":"16","difficulty":3,"recommend":5,"rate":15,"release":"2024-08","year":"2024","sort_date":"2024-08","notes":"日本のみVPN","comment":""},{"title":"Affair","relation":"同い年","synopsis":"お嬢様育ちのPlengとその家政婦の娘のWan。幼いことから姉妹のように一緒に育った二人。Plengの好きな映画の主人公が医師であることからWanは医師になる事を決意し、なった暁には願いを叶えてもらうことを約束します。ある時Plengは両親を失いWanの前から失踪します。13年後変わり果てた姿のPlengと医師になったWan。13年待ち続けたWanには離婚協議中の夫が…","platform":"Youtube/iQIYI","subtitle":"fan sub","vpn":"なし","original":"チャオプラノイ","studio":"Change2561","cp":"LookmheeSonya","duration":"8","difficulty":4,"recommend":5,"rate":20,"release":"2024-09","year":"2024","sort_date":"2024-09","notes":"","comment":""},{"title":"Rverse 4 you","relation":"先輩後輩","synopsis":"1日1回10分だけ時を戻すことができるJattawaと、未来を予知できる妹Vivi。父親が失踪し二人で力を合わせて生活していました。雪の降る日、姉が運命の人に出会うと予知したVivi。運命の人はまさかの女性で大学でも有名な乱暴者Four。第一印象は最悪ですが次第に惹かれ合う二人。二人が親密になるほどにViviには死が近づきます。妹もFourもいる未来のために奮闘するJattawa","platform":"Netflix","subtitle":"fan sub","vpn":"なし","original":"zezeho","studio":"kantana motion Project","cp":"ChristineMae","duration":"8","difficulty":3,"recommend":5,"rate":15,"release":"2024-09","year":"2024","sort_date":"2024-09","notes":"日本からでもVPNなしで視聴できますが、日本語に対応していないので普通にアプリからは出てきません。アプリ設定を英語にして、検索をすると出てきます。","comment":""},{"title":"Unlock your love","relation":"先輩後輩","synopsis":"過去の経験から本当の愛を知らないRainと、10年付き合った相手に振られ もう恋愛はしないと決めたDeane。それぞれが本当に愛してくれる人に出会ったとき、心の鍵を開けることができるのか？","platform":"Youtube/GagaOOLala","subtitle":"fan sub","vpn":"なし","original":"オリジナル","studio":"K11D","cp":"BmineNear\nChakiCakki","duration":"8","difficulty":2,"recommend":1,"rate":2,"release":"2024-09","year":"2024","sort_date":"2024-09","notes":"Youtue cut ver/有料配信でUncut","comment":""},{"title":"Apple","relation":"同い年","synopsis":"事故がきっかけで３年間視力を失い、角膜移植手術で視力が回復したKris。移植後から夢に少女が出てくるようになります。その少女がテレビに映るニュースキャスターのKarn！？そこから彼女に夢中になり、ひょんなことから一緒に仕事をするようになり…","platform":"Youtube/GagaOOLala","subtitle":"fan sub","vpn":"なし","original":"チャオプラノイ","studio":"Kongthuo production","cp":"OrmFolk","duration":"7","difficulty":5,"recommend":4,"rate":20,"release":"2024-10","year":"2024","sort_date":"2024-10","notes":"","comment":""},{"title":"Pluto","relation":"先輩後輩","synopsis":"出来のいい双子の妹が結婚式の最中に「夫とは別に交際相手がいて、その相手と別れおいて欲しい」と頼まれた出来の悪い双子の姉。妹は式の後に交通事故に遭い意識不明に。姉は渋々その浮気相手に会いに行くが、そこにいたのは盲目の女性弁護士。自分は姉であることを隠し、その盲目の浮気相手に近づき、妹のことを調べることにしたが…","platform":"Youtube","subtitle":"完備","vpn":"なし","original":"チャオプラノイ","studio":"GMM","cp":"NamtanFilm","duration":"12","difficulty":4,"recommend":5,"rate":20,"release":"2024-10","year":"2024","sort_date":"2024-10","notes":"","comment":""},{"title":"The Petichor","relation":"先輩後輩","synopsis":"まっすぐで正義感はあるが不器用な特殊捜査班の刑事Tul、と、腐敗した警察を側で見ていて辟易していた監察医Ran。Ranは不器用だけど真っ直ぐなTulに惹かれていき、二人は関係を築くようになります。\n18年前に起こった性産業に従事する女性を中心に起こった連続殺人事件によく似た事件が再び発生。18年前に逮捕された犯人はすでに罪を償い出所していた...","platform":"iQIYI","subtitle":"自動翻訳","vpn":"なし","original":"SIXTEENSEVEN","studio":"S9T concert","cp":"EngfaCharlott\nMalinMeen","duration":"10","difficulty":4,"recommend":5,"rate":20,"release":"2024-11","year":"2024","sort_date":"2024-11","notes":"","comment":"ドラマとしての完成度が高い。GLももちろんいいけど、事件も面白いので刑事物好きな人は絶対好き。GLもEnglotだもの、いいよ、そら。二人のこと知らなくても十分楽しめる。課金しても見る価値十分あると思います。"},{"title":"Love senior SPEP","relation":"先輩後輩","synopsis":"あの二人が帰ってくる！？大人になったGyozaとManaow、Manaowが先にいた会社に入社することになったGyoza。「先に入ったら先輩、後に入ったら後輩、だよね？N'Gyo。Naowは会社でもモテモテのようで、Gyozaは気が気じゃありません。WarangPrangのその後も描かれてるようです。","platform":"WeTV(VIP)/Youtube","subtitle":"自動翻訳","vpn":"なし","original":"Karanda","studio":"Star hunter","cp":"AndaLookaew\nNoonPraewa","duration":"2.5","difficulty":2,"recommend":5,"rate":10,"release":"2024-11","year":"2024","sort_date":"2024-11","notes":"","comment":""},{"title":"Mate","relation":"同い年","synopsis":"お金持ちで美人な建築学生Genlongと、田舎から出てきな苦学生Aoey\n二人は小学生のころ、Aoeyの地元にGenが転校してきたところから交流がありました\n大学生になりAoeyが上京\nAoeyは他人に触れられるとパニック発作を起こしてしまいますが、Genには起こしません\n行くあてがなくGenを頼ったところ、パニックのこともあり、自宅に泊めてくれて同じ屋根の下生活がスタート…","platform":"Youtube/WeTV","subtitle":"fan sub","vpn":"WeTVはVPN,YTは不要","original":"チャオプラノイ","studio":"zense","cp":"GraceOaey","duration":"12","difficulty":4,"recommend":5,"rate":20,"release":"2024-11","year":"2024","sort_date":"2024-11","notes":"","comment":""},{"title":"I am Devil","relation":"先輩後輩","synopsis":"人気で初めの女優は女たらしだけど、資産家の男性と結婚することに。その男性の義妹は兄を心配しますが、気付くと二人は惹かれあって...??","platform":"Youtube/Tiktok","subtitle":"自動翻訳","vpn":"なし","original":"なし","studio":"Maxlive Online TV","cp":"PrangMook","duration":"3.5","difficulty":3,"recommend":4,"rate":12,"release":"2024-12","year":"2024","sort_date":"2024-12","notes":"","comment":"下手な韓国ドラマより展開早い、追いつければ面白い"},{"title":"Us","relation":"先輩後輩","synopsis":"原作GapやDreamに出てきた、歯医者のPamとDokrakの学生時代の話。","platform":"Youtube","subtitle":"完備","vpn":"なし","original":"チャオプラノイ","studio":"GMM","cp":"EmiBonnie","duration":"12","difficulty":5,"recommend":5,"rate":25,"release":"2025-01","year":"2025","sort_date":"2025-01","notes":"順次公式YTにアタッチ","comment":""},{"title":"Flirt milk","relation":"先輩後輩","synopsis":"BLのサブカプ","platform":"iQIYI","subtitle":"自動翻訳","vpn":"あり","original":"?","studio":"Star hunter","cp":"NoonPraewa","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"2025-01","year":"2025","sort_date":"2025-01","notes":"BLのサブカプ","comment":""},{"title":"Be my angel","relation":"","synopsis":"素敵な恋人ができますように...と願ったはずなのに歌しか上手くないポンコツ天使が天から落ちてきた！？","platform":"iQIYI","subtitle":"自動翻訳","vpn":"あり","original":"あり","studio":"Pennyystudio","cp":"BambamBaipor","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2025-01","year":"2025","sort_date":"2025-01","notes":"","comment":""},{"title":"Reverse with me","relation":"先輩後輩","synopsis":"心臓外科医のフェローKaran(R4Yの娘、超能力あり)と医学部生のインターンのKliao。Karnは幼い頃から夢の中でKliaoとの未来をビジョンを見ていた。巻き戻しの能力を使ってずっとKliaoを窮地から救っていたけど、仲良くなるとKliaoが死んでしまうみたい...Kliaoを救えるのか？","platform":"iQIYI","subtitle":"自動翻訳","vpn":"なし","original":"zezeho","studio":"SiamSi studio","cp":"NattPitcha","duration":"8","difficulty":4,"recommend":4,"rate":16,"release":"2025-02","year":"2025","sort_date":"2025-02","notes":"","comment":""},{"title":"I'm your moon","relation":"先輩後輩","synopsis":"王政の時代に結ばれたお姫様二人、時代が二人を許さなかった。現代に転生して再び結ばれる？！","platform":"1話のみYoutube/iQIYI","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"U entateiment","cp":"","duration":"8","difficulty":2,"recommend":2,"rate":4,"release":"2025-03","year":"2025","sort_date":"2025-03","notes":"","comment":""},{"title":"Apple the series S2","relation":"同い年","synopsis":"付き合い始めて1年、ケンカしたりすれ違ったり色々あるけどKarnはKrisに結婚を申し込むようです...原作小説にもないオリジナルストーリー","platform":"Youtube","subtitle":"fan sub","vpn":"なし","original":"チャオプラノイ","studio":"Kongthuo production","cp":"OrmFolk","duration":"5","difficulty":3,"recommend":3,"rate":9,"release":"2025-04","year":"2025","sort_date":"2025-04","notes":"順次公式YTにアタッチ","comment":""},{"title":"Music story: Losing control","relation":"同世代","synopsis":"お金はあるけど友達はいないQueen(Bmine)。友達派遣アプリでSeaとBamをそれぞれ呼び、退屈な時間しのぎます...","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"オリジナル","studio":"K11D","cp":"Bemine\nMashiiMekkahala","duration":"2.5","difficulty":2,"recommend":3,"rate":6,"release":"2025-04","year":"2025","sort_date":"2025-04","notes":"","comment":"めっちゃ3角関係...大丈夫な人だけ。ストーリーは面白いし、丁寧に撮影されているので完成度は高いです。"},{"title":"Denined Love","relation":"歳の差","synopsis":"社長になりたいならKhemと結婚しろと父親の条件により、結婚することになったRin。一緒に生活していくうちにKhemに惹かれていくRinですが、Rinにはとある理由から愛を拒否していて...","platform":"WeTV(VIP)","subtitle":"自動翻訳","vpn":"あり","original":"Peony","studio":"CopyAbangkok","cp":"EnjoyJune","duration":"12","difficulty":4,"recommend":4,"rate":16,"release":"2025-05","year":"2025","sort_date":"2025-05","notes":"Trailer","comment":"Gapを彷彿とさせる丁寧だけどタイを感じる作り。面白い！"},{"title":"B・Frined","relation":"先輩後輩","synopsis":"あんまり...よく分からなかった...","platform":"WeTV(VIP)","subtitle":"自動翻訳","vpn":"あり","original":"Guy Suwannnaroj","studio":"IDX Entertaiment","cp":"PaiFay","duration":"12","difficulty":0,"recommend":0,"rate":0,"release":"2025-05","year":"2025","sort_date":"2025-05","notes":"Trailer","comment":"見なくていいです。"},{"title":"Whale Store xoxo","relation":"先輩後輩","synopsis":"商店を営む父が急死、起業で働いていたWanは30歳を目前に退社。経営の分からないWanの元に大学で市場経済について教鞭をとるMeanawが現れ、手助けをしてあげます","platform":"Netflix / Youtube","subtitle":"なし","vpn":"なし","original":"あり","studio":"GMM","cp":"MilkLove","duration":"10","difficulty":3,"recommend":3,"rate":9,"release":"2025-06","year":"2025","sort_date":"2025-06","notes":"","comment":"GLというよりHuman dramaとしての側面の方が大きい作品でした。"},{"title":"Only you","relation":"先輩後輩","synopsis":"アイドルとそのボディーガード","platform":"ch3 app","subtitle":"英字幕のみ","vpn":"なし","original":"オリジナル","studio":"ch3","cp":"LingOrm","duration":"14","difficulty":3,"recommend":2,"rate":6,"release":"2025-07","year":"2025","sort_date":"2025-07","notes":"","comment":"期待が大きかった故に残念な作品でした...。"},{"title":"Harmony Secret","relation":"同い年","synopsis":"大手会社の令嬢の二人。学生時代から知り合いだったが、再会したのは入札会場。お互いの会社の情報を得るために二人は近付き情報を盗もうとします....","platform":"iQIYI","subtitle":"自動翻訳","vpn":"あり","original":"あり","studio":"Change2561","cp":"LookmheeSonya","duration":"8","difficulty":4,"recommend":3,"rate":12,"release":"2025-07","year":"2025","sort_date":"2025-07","notes":"","comment":""},{"title":"Somewhere Somehow","relation":"同い年","synopsis":"口下手なKee(Fay)とお嬢様で天真爛漫のPeem(May)。15年の歳月の２人を一緒に見守る物語。日本ロケも敢行！","platform":"Youtube","subtitle":"完備","vpn":"なし","original":"Monmaw","studio":"IDF","cp":"FayMay","duration":"13","difficulty":5,"recommend":5,"rate":25,"release":"2025-08","year":"2025","sort_date":"2025-08","notes":"Pilot日本語字幕","comment":"日本語字幕担当しました。絶対見て欲しい。"},{"title":"Roller coster","relation":"同い年","synopsis":"三角関係GL。かつて恋人だったAir(Neko)とPure(Pundao)。Airは結婚して二人の関係は終焉。そんな時にPureはバーで出会ったLoft(Shelly)に一目惚れ...","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"Motion Minds Entertainment","cp":"ShellyPundao & Neko","duration":"8","difficulty":3,"recommend":5,"rate":15,"release":"2025-08","year":"2025","sort_date":"2025-08","notes":"","comment":"撮影スタッフも女性が多い現場。三角関係ですが、スッと入ってきました。大変良い。"},{"title":"Queendom","relation":"同い年","synopsis":"幼い頃から競い合い、仲悪い二人が共演することになり...すると体が入れ替わってる！？","platform":"WeTV","subtitle":"自動翻訳","vpn":"あり","original":"あり","studio":"WeTV","cp":"PamArhoung","duration":"12","difficulty":2,"recommend":3,"rate":6,"release":"2025-08","year":"2025","sort_date":"2025-08","notes":"","comment":"海外勢からの支持がすんごい作品。サブカプのお姉さんたちはめちゃ良かった！"},{"title":"I am Devil2","relation":"先輩後輩","synopsis":"1の最後に想いを伝え合い結ばれた二人、幸せな二人を阻む新たな敵が登場！","platform":"Youtube(Cut)/ MonoMax(課金)","subtitle":"自動翻訳","vpn":"なし","original":"なし","studio":"Maxlive Online TV","cp":"PrangMook","duration":"1.5","difficulty":2,"recommend":3,"rate":6,"release":"2025-09","year":"2025","sort_date":"2025-09","notes":"","comment":""},{"title":"Poisonous Love","relation":"先輩後輩","synopsis":"TSOUのユニバース","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"North Star Entertainment","cp":"GinJay","duration":"11","difficulty":4,"recommend":4,"rate":16,"release":"2025-09","year":"2025","sort_date":"2025-09","notes":"Pilot","comment":"めちゃ良かったです...最高です"},{"title":"Player Series","relation":"先輩後輩","synopsis":"NYで修士課程を終えたPun、詐欺に遭いタイに帰国。解放してもらったのはPloyという女優。PloyとPhethaiが兄弟だと発覚し、Phethaiの行方を掴むためにPunはPloyに近づくことに","platform":"iQIYI","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"HeartPopStudio","cp":"IceAmena\nMemiBae\nGraceHarper","duration":"12","difficulty":3,"recommend":4,"rate":12,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"","comment":""},{"title":"Love Design","relation":"歳の差","synopsis":"日本で建築の勉強をしていたAokbab(kao)はタイに戻り、設計事務所を立て直すことに。天才設計士Rin(Jane)をスカウト！３角関係はいかに？","platform":"WeTV","subtitle":"自動翻訳","vpn":"あり","original":"オリジナル","studio":"VelCurveStudio","cp":"KaoJane\nFriendPalm","duration":"9","difficulty":4,"recommend":5,"rate":20,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"Pilot","comment":"NCシーンのいらないGLと言われるくらいキレイで、実力のある俳優陣で、脚本も面白い作品でした。"},{"title":"Dangerous Queen","relation":"歳の差","synopsis":"ギャンブル依存症の母を持つ苦学生Bonitaと愛を知らないお金持ちの社長Queen。全てをお金で解決しようとする不器用なQueenさん可愛すぎる。","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"S.nur Entertainment","cp":"TKNur","duration":"8","difficulty":2,"recommend":4,"rate":8,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"","comment":"タイがすぎるアクの強いドラマですが、ストーリー面白い、顔面最強で帳消しになります。"},{"title":"Unlimited Love","relation":"","synopsis":"","platform":"Youtube(Cut ver), MGI 課金","subtitle":"自動翻訳","vpn":"なし","original":"?","studio":"GrandTV","cp":"EngLot他","duration":"10","difficulty":0,"recommend":0,"rate":0,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"","comment":""},{"title":"The love never sets","relation":"先輩後輩","synopsis":"Usに出てきた鬼美人お姉さん出演！","platform":"iQIYI","subtitle":"自動翻訳","vpn":"なし","original":"?","studio":"red elephant","cp":"NikitaJaja","duration":"14","difficulty":0,"recommend":0,"rate":0,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"BLのサブカプ /Pilot","comment":""},{"title":"My safe zone","relation":"同い年","synopsis":"婚約していたけど、婚約者の浮気現場を目撃...仕事も失ったが実家に帰り幼馴染との恋が再燃","platform":"ch3 app","subtitle":"英字幕のみ","vpn":"","original":"オリジナル","studio":"ch3","cp":"LenaMiu","duration":"8","difficulty":2,"recommend":3,"rate":6,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"Pilot","comment":"私がCh3との相性悪いのかもしれない...ごめんなさい..."},{"title":"Clairebell","relation":"先輩後輩","synopsis":"刑務所GL","platform":"Youtube(Cut ver)/ One D app(Uncut)","subtitle":"自動翻訳","vpn":"なし","original":"チャオプラノイ","studio":"MineMedia","cp":"MablePangjie","duration":"8","difficulty":4,"recommend":5,"rate":20,"release":"2025-11","year":"2025","sort_date":"2025-11","notes":"Pilot","comment":"映像がきれい、俳優さんがうますぎる、完成度が高過ぎる作品。ぜひUncut、いい画面音響で見て欲しい。"},{"title":"Run away","relation":"関係なし","synopsis":"ホラーGL","platform":"TELASA, Youtube(VPN)","subtitle":"完備/自動翻訳","vpn":"あり","original":"あり","studio":"Grow","cp":"PlaifahMiusic","duration":"8","difficulty":4,"recommend":4,"rate":16,"release":"2025-11","year":"2025","sort_date":"2025-11","notes":"","comment":""},{"title":"Like A Palette","relation":"先輩後輩","synopsis":"芸術学部に入ったJane(Thongfah)。ミスコン学部優勝。しかしメンターはJaneのことを睨みつけるDai先輩(Pineare)...","platform":"WeTV","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"WonderLifeEntertainment","cp":"PineareThongfah","duration":"8","difficulty":4,"recommend":3,"rate":12,"release":"2025-11","year":"2025","sort_date":"2025-11","notes":"","comment":""},{"title":"Mission Love or Lies","relation":"先輩後輩","synopsis":"社長令嬢が命を狙われた！忖度ドラマで、展開は何も面白くないので観なくていいです。","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"なし","studio":"","cp":"Vibeberry studio","duration":"4","difficulty":0,"recommend":0,"rate":0,"release":"2025-10","year":"2025","sort_date":"2025-10","notes":"","comment":""},{"title":"MuteLuv","relation":"関係なし","synopsis":"占いを信じる女性と理性派の女性が出会い、占い文化をめぐる事件や恋を通して理解し惹かれ合う。信仰と現実の間で成長を描くGL","platform":"Youtube","subtitle":"自動翻訳","vpn":"なし","original":"?","studio":"GMM","cp":"JanJingJing","duration":"4","difficulty":4,"recommend":3,"rate":12,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"4eletment;Earth","relation":"先輩後輩","synopsis":"幼馴染のお姉さんと、身を守るためにと偽装結婚をして...","platform":"iQIYI","subtitle":"自動翻訳","vpn":"なし","original":"あり","studio":"North Star Entertainment","cp":"AppleMim","duration":"8","difficulty":5,"recommend":5,"rate":25,"release":"2026-01","year":"2026","sort_date":"2026-01","notes":"","comment":""},{"title":"Denined Love 2","relation":"歳の差","synopsis":"あの二人が帰ってくる！Rinが双子を妊娠、家族が増えます。","platform":"WeTV","subtitle":"自動翻訳","vpn":"あり","original":"Peony","studio":"CopyAbangkok","cp":"EnjoyJune","duration":"2","difficulty":0,"recommend":0,"rate":0,"release":"2026-01","year":"2026","sort_date":"2026-01","notes":"","comment":""},{"title":"I WANNA BE SUP'TAR","relation":"先輩後輩","synopsis":"男女cpで話題になった作品のリメイクGL！大スターと売れない駆け出し女優の凸凹同居生活から始まる恋","platform":"One D app(Uncut)","subtitle":"自動翻訳","vpn":"","original":"あり","studio":"Change2561","cp":"LilyBelle","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2026-02","year":"2026","sort_date":"2026-02","notes":"","comment":""},{"title":"Heart Code","relation":"先輩後輩","synopsis":"警察幹部の娘が命を狙われ隠れるために、特殊警察の訓練を受けることに。エリート警官に助けてもらううちに...","platform":"MonoMax","subtitle":"","vpn":"","original":"?","studio":"MonoMax","cp":"TungpangJessie","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2026-02","year":"2026","sort_date":"2026-02","notes":"","comment":""},{"title":"Frozen Valentine","relation":"","synopsis":"","platform":"WeTV","subtitle":"自動翻訳","vpn":"","original":"あり","studio":"CopyAbangkok","cp":"NattyYeepun","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2026-02","year":"2026","sort_date":"2026-02","notes":"","comment":""},{"title":"Play Park","relation":"","synopsis":"","platform":"ch3 app","subtitle":"英字幕のみ","vpn":"","original":"あり","studio":"ch3","cp":"TanYada","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2026-02","year":"2026","sort_date":"2026-02","notes":"","comment":""},{"title":"Only my sunshine","relation":"先輩後輩","synopsis":"","platform":"","subtitle":"","vpn":"","original":"あり","studio":"Star hunter","cp":"AtomMer","duration":"8","difficulty":0,"recommend":0,"rate":0,"release":"2026-02","year":"2026","sort_date":"2026-02","notes":"Pilot 日本語","comment":"GMMのMoon shadowとユニバース、主人公SunとMoonが双子"},{"title":"Girl Rules","relation":"？","synopsis":"とりあえずGMMGirlsが入り乱れる話。","platform":"？","subtitle":"？","vpn":"？","original":"？","studio":"GMM","cp":"MilkLove\nNamtamFilm\nViewMiw","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"Stuck with me","relation":"？","synopsis":"弁護士(R4Yの娘、超能力なし)とパラリーガルの話","platform":"？","subtitle":"？","vpn":"？","original":"zezeho","studio":"TANGUYManagement","cp":"AntWarinda\nNutThanyarat","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"Cranium","relation":"？","synopsis":"人類学者の二人が付き合っていたが、仲違いして...","platform":"","subtitle":"","vpn":"","original":"","studio":"IDF?","cp":"FreenBecky","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"Pilot日本語字幕","comment":""},{"title":"4eletment;Air","relation":"","synopsis":"4姉妹","platform":"","subtitle":"","vpn":"","original":"","studio":"","cp":"FreenBecky","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"4eletment;Fire","relation":"","synopsis":"","platform":"","subtitle":"","vpn":"","original":"","studio":"","cp":"NamneugMilinD","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"元BNK48メンバー","comment":""},{"title":"4eletment;Water","relation":"","synopsis":"","platform":"","subtitle":"","vpn":"","original":"","studio":"","cp":"EngLot","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"Dream Mind","relation":"","synopsis":"","platform":"","subtitle":"","vpn":"","original":"Lita","studio":"House of Guys","cp":"JaraDarran,BellezBel,BuaSeetong","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"Pilot","comment":""},{"title":"Crush","relation":"先輩後輩","synopsis":"","platform":"","subtitle":"","vpn":"","original":"チャオプラノイ","studio":"Kongthuo production","cp":"OrmFolk","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"Remine","relation":"?","synopsis":"","platform":"","subtitle":"","vpn":"","original":"あり","studio":"Star hunter","cp":"AndaLookaew\nNoonPraewa","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"","comment":""},{"title":"Moon shadow","relation":"","synopsis":"","platform":"","subtitle":"","vpn":"","original":"","studio":"GMM","cp":"EmiBonnie","duration":"","difficulty":0,"recommend":0,"rate":0,"release":"未定","year":"未定","sort_date":"9999-99","notes":"Star hunterのOnly my sunshineとユニバース","comment":""}];
+
+</script>
+  </div><!-- /.main-wrap -->
+</div><!-- /.page-layout -->
+<!-- [END SECTION: SIDEBAR LAYOUT] -->
+
+</body>
+</html>

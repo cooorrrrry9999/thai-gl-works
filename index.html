@@ -665,7 +665,7 @@ window.onFilterChange = function(type, val, checked) {
 // ボタンラベルを選択数に応じて更新
 function updateFilterBtnLabel(type) {
   const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
-  const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年' };
+  const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年', vpn:'VPN', subtitle:'字幕' };
   const arr = map[type];
   const btn = document.getElementById('fbtn-' + type);
   if (!btn) return;

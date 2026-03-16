@@ -33,7 +33,7 @@ const provider = new GoogleAuthProvider();
 
 // ── 選択肢定数（Firestoreから読み込み。未取得時はデフォルト値を使用） ──
 let PLATFORM_OPTIONS = ['Youtube','Netflix','iQIYI','WeTV','Telasa','GagaOOLala','楽天','FOD','DMM','ch3','その他'];
-let VPN_OPTIONS      = ['不要','要（日本）','要（タイ）'];
+let VPN_OPTIONS      = ['不要(日本)', '要(日本以外)'];
 let SUBTITLE_OPTIONS = ['完備','fan sub','自動翻訳','英字幕のみ','なし'];
 let CUT_OPTIONS      = ['uncut','cut','cut+uncut'];
 let PAID_OPTIONS     = ['無料','有料','一部無料'];
@@ -775,7 +775,7 @@ function buildFilterDropdowns() {
   const ddStudio = document.getElementById('dd-studio');
   const ddYear   = document.getElementById('dd-year');
 
-  const vpnItems = ['不要(日本)', '要(日本以外)', '未登録'];
+  const vpnItems = ['不要(日本)', '要(日本以外)'];
   const ddVpn    = document.getElementById('dd-vpn');
 
   if (ddPlt)    ddPlt.innerHTML    = makeItems('plt', platItems);

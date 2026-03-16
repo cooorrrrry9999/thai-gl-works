@@ -704,8 +704,12 @@ function go() {
   if (F==='w')   l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 
-  // 複数選択フィルター（OR条件：どれか一つに一致すれば表示）
+  // フィルター条件：
+  //   同一フィルター内 → OR（例：配信でYoutube OR iQIYI）
+  //   異なるフィルター間 → AND（例：配信フィルター AND VPNフィルター AND 字幕フィルター）
+
   if (FILTER_PLT.length > 0) {
+    // 配信：platforms配列のいずれかがFILTER_PLTのいずれかに一致（OR）
     l = l.filter(d => {
       const plats = d.platforms && d.platforms.length
         ? d.platforms.map(p => p.platform)
@@ -714,15 +718,20 @@ function go() {
     });
   }
   if (FILTER_STATUS.length > 0) {
+    // 放送Status：OR
     l = l.filter(d => FILTER_STATUS.some(v => v === calcStatus(d)));
   }
   if (FILTER_STUDIO.length > 0) {
+    // 制作会社：OR
     l = l.filter(d => FILTER_STUDIO.some(v => v === (d.studio||'')));
   }
   if (FILTER_YEAR.length > 0) {
+    // 放送年：OR
     l = l.filter(d => FILTER_YEAR.some(v => v === (d.year||'未定')));
   }
   if (FILTER_VPN.length > 0) {
+    // VPN：platformsのいずれかがFILTER_VPNのいずれかに一致（OR）
+    // ただし他フィルターとはAND（l.filterをチェーンしているので自動的にAND）
     l = l.filter(d => {
       const vpns = d.platforms && d.platforms.length
         ? d.platforms.map(p => p.vpn || '不要(日本)')
@@ -731,6 +740,8 @@ function go() {
     });
   }
   if (FILTER_SUBTITLE.length > 0) {
+    // 字幕：platformsのいずれかがFILTER_SUBTITLEのいずれかに一致（OR）
+    // ただし他フィルターとはAND
     l = l.filter(d => {
       const subs = d.platforms && d.platforms.length
         ? d.platforms.map(p => p.subtitle || '')

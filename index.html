@@ -523,11 +523,7 @@ window.submitAdminForm = async () => {
       showToast('追加しました ✓');
     }
     closeAdminModal();
-    await // 設定を読み込んでからデータ取得
-loadSettings().then(() => {
-  loadDramasFromDB();
-  _exposeToWindow();
-});
+    await loadDramasFromDB();
   } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
 };
 
@@ -540,11 +536,7 @@ window.deleteDrama = async (id, e) => {
     await deleteDoc(doc(db,'dramas',id));
     showToast('削除しました');
     closeMD();
-    await // 設定を読み込んでからデータ取得
-loadSettings().then(() => {
-  loadDramasFromDB();
-  _exposeToWindow();
-});
+    await loadDramasFromDB();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
 };
 
@@ -842,29 +834,6 @@ function card(d, listMode) {
   const coryRateHtml = (mode === 'cory' && d.recommend)
     ? `<div class="crating"><div class="stars">${strs(d.recommend)}</div></div>`
     : '';
-
-  // Coryリスト管理者用インライン編集フォーム
-  const coryEditHtml = (mode === 'cory' && isAdmin) ? `
-    <div class="cory-edit-form" onclick="event.stopPropagation()">
-      <div class="cef-row">
-        <label>ステータス</label>
-        <select onchange="saveCoryField('${id}','cory_status',this.value)">
-          ${['未視聴','視聴中','視聴済み','Drop out'].map(s =>
-            `<option value="${s}"${(d.cory_status||'未視聴')===s?' selected':''}>${s}</option>`
-          ).join('')}
-        </select>
-      </div>
-      <div class="cef-row">
-        <label>おすすめ度</label>
-        <input type="number" min="0" max="5" step="0.5" value="${d.recommend||0}"
-          onchange="saveCoryField('${id}','recommend',parseFloat(this.value)||0)"
-          style="width:60px">
-      </div>
-      <div class="cef-row">
-        <label>コメント</label>
-        <textarea rows="2" onchange="saveCoryField('${id}','comment',this.value)">${d.comment||''}</textarea>
-      </div>
-    </div>` : '';
 
   // Coryリスト管理者用インライン編集フォーム
   const coryEditHtml = (mode === 'cory' && isAdmin) ? `

@@ -941,9 +941,10 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeMD(); });
 
 function updateHeroStats() {
   document.getElementById('sTotal').textContent = localDramas.length;
-  document.getElementById('sRated').textContent = localDramas.filter(d=>d.rate>0).length;
-  document.getElementById('sTop').textContent = localDramas.filter(d=>d.recommend>=5).length;
-  document.getElementById('sUpcoming').textContent = localDramas.filter(d=>calcStatus(d)==='放送前').length;
+  // 旧要素は削除済みだがエラー回避のためnullチェック
+  const sRated = document.getElementById('sRated'); if(sRated) sRated.textContent = localDramas.filter(d=>d.rate>0).length;
+  const sTop = document.getElementById('sTop'); if(sTop) sTop.textContent = localDramas.filter(d=>d.recommend>=5).length;
+  const sUp = document.getElementById('sUpcoming'); if(sUp) sUp.textContent = localDramas.filter(d=>calcStatus(d)==='放送前').length;
 }
 </script>
 
@@ -979,6 +980,31 @@ body{background:var(--dark);color:var(--text);font-family:'Noto Sans JP',sans-se
 .stat-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:2px;}
 .update-note{position:absolute;top:12px;right:14px;font-size:11px;color:var(--muted);
   background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);padding:3px 9px;border-radius:20px;}
+
+/* コンパクトヒーロー */
+.hero-compact{padding:28px 20px 20px !important;}
+.hero-inner{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;position:relative;}
+.hero-compact h1{font-size:clamp(1.3rem,3.5vw,2rem) !important;margin-bottom:0 !important;}
+.hero-total{display:flex;align-items:baseline;gap:6px;}
+.stat-label-inline{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
+
+/* モードバー */
+.mode-bar{
+  background:rgba(155,126,200,.06);
+  border-bottom:1px solid rgba(155,126,200,.15);
+  padding:10px 20px 10px;
+  max-width:100%;
+}
+.mode-title{
+  font-family:'DM Serif Display',serif;
+  font-size:16px;
+  color:var(--text);
+  margin-bottom:2px;
+}
+.mode-sub{
+  font-size:11px;
+  color:var(--muted);
+}
 
 .auth-bar{position:absolute;top:12px;left:16px;display:flex;align-items:center;gap:8px;z-index:10;}
 #loginBtn{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.08);
@@ -1664,7 +1690,7 @@ textarea:focus{border-color:var(--lav);}
   <div class="main-wrap" id="mainWrap">
 <!-- [END SECTION: SIDEBAR HTML] -->
 
-<div class="hero">
+<div class="hero hero-compact">
   <div class="auth-bar">
     <button id="loginBtn" onclick="loginWithGoogle()">
       <img src="https://www.google.com/favicon.ico" width="14" height="14"> Googleでログイン
@@ -1676,16 +1702,20 @@ textarea:focus{border-color:var(--lav);}
       <button class="logout-btn" onclick="logout()">ログアウト</button>
     </div>
   </div>
-  <!-- 更新日非表示 -->
   <div class="petals" id="petals"></div>
-  <h1>🌸 タイGL作品一覧</h1>
-  <p class="hero-sub">Thai Girls Love Drama Complete Guide</p>
-  <div class="hero-stats">
-    <div><div class="stat-num" id="sTotal">-</div><div class="stat-label">総作品数</div></div>
-    <div><div class="stat-num" id="sRated">-</div><div class="stat-label">レート済み</div></div>
-    <div><div class="stat-num" id="sTop">-</div><div class="stat-label">★5オススメ</div></div>
-    <div><div class="stat-num" id="sUpcoming">-</div><div class="stat-label">今後予定</div></div>
+  <div class="hero-inner">
+    <h1>🌸 Cory's GL Guide</h1>
+    <div class="hero-total">
+      <span class="stat-num" id="sTotal">-</span>
+      <span class="stat-label-inline">作品収録中</span>
+    </div>
   </div>
+</div>
+
+<!-- モードバー：サイドバー切替で内容が変わる -->
+<div class="mode-bar" id="modeBar">
+  <div class="mode-title" id="modeTitle">🎬 作品を探す</div>
+  <div class="mode-sub" id="modeSub">ログイン不要で作品を探す</div>
 </div>
 
 <div id="statsRow" style="display:none"></div>
@@ -1940,6 +1970,9 @@ window.sbNav = function(key) {
   document.querySelectorAll('.sb-item').forEach(el => el.classList.remove('active'));
   document.getElementById('sb-' + key)?.classList.add('active');
 
+  // モードバー更新
+  updateModeBar(key);
+
   // ── 作品を探す → 全作品一覧・検索モード ────────────────────────────
   if (key === 'all') {
     CARD_MODE = 'search';
@@ -1991,6 +2024,21 @@ window.sbNav = function(key) {
   document.getElementById('mainWrap').scrollTo(0, 0);
   window.scrollTo(0, 0);
 };
+
+// モードバーの表示を更新
+function updateModeBar(key) {
+  const modes = {
+    'all':        { title: '🎬 作品を探す',         sub: 'ログイン不要で作品を探す' },
+    'mylist':     { title: '👤 マイリスト',          sub: '無料ログイン後、自分だけのリストを作成する' },
+    'cory':       { title: '🌸 Coryの視聴リスト',    sub: 'coryの感想を見てみる' },
+    'admin-cory': { title: '🌸 視聴リスト管理',      sub: '管理者用：Coryの視聴記録を管理する' },
+  };
+  const m = modes[key] || modes['all'];
+  const titleEl = document.getElementById('modeTitle');
+  const subEl   = document.getElementById('modeSub');
+  if (titleEl) titleEl.textContent = m.title;
+  if (subEl)   subEl.textContent   = m.sub;
+}
 
 function highlightStatusBtn(s) {
   document.querySelectorAll('.status-btn').forEach(el =>

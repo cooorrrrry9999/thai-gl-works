@@ -232,18 +232,37 @@ window.saveCoryField = async (id, field, value) => {
   if (!isAdmin) return;
   try {
     const update = { [field]: value };
-    // recommend変更時はrateも再計算
-    if (field === 'recommend') {
-      const d = localDramas.find(x => String(x._id||x.title) === String(id));
-      if (d) {
-        update.rate = Math.round(value * (d.beginner_score||0) * 10) / 10;
-      }
-    }
     await updateDoc(doc(db, 'dramas', String(id)), update);
-    // localDramasを更新
     const d = localDramas.find(x => String(x._id||x.title) === String(id));
     if (d) Object.assign(d, update);
     showToast('保存しました ✓');
+  } catch(e) {
+    showToast('保存エラー: ' + e.message, 'error');
+  }
+};
+
+// おすすめ度・初心者向けスコアを同時保存して総合点を自動計算
+window.saveCoryRating = async (id) => {
+  if (!isAdmin) return;
+  const recEl = document.getElementById('rec-' + id);
+  const bscEl = document.getElementById('bsc-' + id);
+  const rateEl = document.getElementById('rate-' + id);
+  if (!recEl || !bscEl) return;
+  const rec = parseFloat(recEl.value) || 0;
+  const bsc = parseFloat(bscEl.value) || 0;
+  const rate = Math.round(rec * bsc * 10) / 10;
+  // 総合点をリアルタイム表示
+  if (rateEl) rateEl.textContent = rate || '─';
+  try {
+    await updateDoc(doc(db, 'dramas', String(id)), {
+      recommend: rec,
+      beginner_score: bsc,
+      rate: rate,
+    });
+    // localDramasも更新
+    const d = localDramas.find(x => String(x._id||x.title) === String(id));
+    if (d) { d.recommend = rec; d.beginner_score = bsc; d.rate = rate; }
+    showToast('評価を保存しました ✓');
   } catch(e) {
     showToast('保存エラー: ' + e.message, 'error');
   }
@@ -836,6 +855,7 @@ function card(d, listMode) {
     : '';
 
   // Coryリスト管理者用インライン編集フォーム
+  const coryRate = Math.round((d.recommend||0) * (d.beginner_score||0) * 10) / 10;
   const coryEditHtml = (mode === 'cory' && isAdmin) ? `
     <div class="cory-edit-form" onclick="event.stopPropagation()">
       <div class="cef-row">
@@ -847,10 +867,24 @@ function card(d, listMode) {
         </select>
       </div>
       <div class="cef-row">
-        <label>おすすめ度</label>
-        <input type="number" min="0" max="5" step="0.5" value="${d.recommend||0}"
-          onchange="saveCoryField('${id}','recommend',parseFloat(this.value)||0)"
+        <label>おすすめ度（0〜5）</label>
+        <input type="number" id="rec-${id}" min="0" max="5" step="0.5"
+          value="${d.recommend||0}"
+          onchange="saveCoryRating('${id}')"
           style="width:60px">
+      </div>
+      <div class="cef-row">
+        <label>初心者向けスコア（5=初心者向け / 0=上級者向け）</label>
+        <input type="number" id="bsc-${id}" min="0" max="5" step="0.5"
+          value="${d.beginner_score||0}"
+          onchange="saveCoryRating('${id}')"
+          style="width:60px">
+      </div>
+      <div class="cef-row">
+        <label>総合点（自動計算）</label>
+        <div id="rate-${id}" style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--gold)">
+          ${coryRate || '─'}
+        </div>
       </div>
       <div class="cef-row">
         <label>コメント</label>

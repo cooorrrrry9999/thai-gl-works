@@ -31,14 +31,112 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
-// ── 選択肢定数（後からここを編集するだけで選択肢が変わる） ─────────────
-const PLATFORM_OPTIONS = ['Youtube','Netflix','iQIYI','WeTV','Telasa','GagaOOLala','楽天','FOD','DMM','ch3','その他'];
-const VPN_OPTIONS      = ['不要','要（日本）','要（タイ）'];
-const SUBTITLE_OPTIONS = ['完備','fan sub','自動翻訳','英字幕のみ','なし'];
-const CUT_OPTIONS      = ['uncut','cut','cut+uncut'];
-const PAID_OPTIONS     = ['無料','有料','一部無料'];
-const RELATION_OPTIONS = ['先輩後輩','同い年','歳の差','同世代','関係なし','不明'];
-const WATCH_STATUS     = ['未視聴','視聴中','視聴済み','Drop out'];
+// ── 選択肢定数（Firestoreから読み込み。未取得時はデフォルト値を使用） ──
+let PLATFORM_OPTIONS = ['Youtube','Netflix','iQIYI','WeTV','Telasa','GagaOOLala','楽天','FOD','DMM','ch3','その他'];
+let VPN_OPTIONS      = ['不要','要（日本）','要（タイ）'];
+let SUBTITLE_OPTIONS = ['完備','fan sub','自動翻訳','英字幕のみ','なし'];
+let CUT_OPTIONS      = ['uncut','cut','cut+uncut'];
+let PAID_OPTIONS     = ['無料','有料','一部無料'];
+let RELATION_OPTIONS = ['先輩後輩','同い年','歳の差','同世代','関係なし','不明'];
+const WATCH_STATUS   = ['未視聴','視聴中','視聴済み','Drop out'];
+
+// ── 設定データをFirestoreから読み込む ─────────────────────────────────
+async function loadSettings() {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'options'));
+    if (snap.exists()) {
+      const d = snap.data();
+      if (d.platforms) PLATFORM_OPTIONS = d.platforms;
+      if (d.vpn)       VPN_OPTIONS      = d.vpn;
+      if (d.subtitles) SUBTITLE_OPTIONS = d.subtitles;
+      if (d.cut)       CUT_OPTIONS      = d.cut;
+      if (d.paid)      PAID_OPTIONS     = d.paid;
+      if (d.relation)  RELATION_OPTIONS = d.relation;
+    }
+  } catch(e) { /* デフォルト値を使用 */ }
+}
+
+// ── 設定データをFirestoreに保存する（管理者のみ） ──────────────────────
+// ── 項目編集モーダル ──────────────────────────────────────────────────
+window.openSettingsModal = () => {
+  if (!isAdmin) return;
+  document.getElementById('settingsModal').classList.add('open');
+  renderSettingsSections();
+};
+window.closeSettingsModal = () => {
+  document.getElementById('settingsModal').classList.remove('open');
+};
+
+function renderSettingsSections() {
+  const sections = [
+    { key: 'platforms', label: '配信媒体',  arr: PLATFORM_OPTIONS },
+    { key: 'relation',  label: '関係値',    arr: RELATION_OPTIONS },
+    // 必要に応じて以下のコメントを外すと追加できます
+    // { key: 'vpn',       label: 'VPN',       arr: VPN_OPTIONS },
+    // { key: 'subtitles', label: '字幕',      arr: SUBTITLE_OPTIONS },
+    // { key: 'cut',       label: 'cut/uncut', arr: CUT_OPTIONS },
+    // { key: 'paid',      label: '料金',      arr: PAID_OPTIONS },
+  ];
+  const wrap = document.getElementById('settings-sections');
+  if (!wrap) return;
+  wrap.innerHTML = sections.map(s => `
+    <div class="settings-section">
+      <div class="am-section-title">${s.label}</div>
+      <div class="settings-tags" id="stags-${s.key}">
+        ${s.arr.map((v, i) => `
+          <span class="stag-item">
+            ${v}
+            <button onclick="removeSettingItem('${s.key}',${i})" class="stag-del">✕</button>
+          </span>`).join('')}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input type="text" id="sinput-${s.key}" placeholder="新しい項目を入力..."
+          style="flex:1;background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+            border-radius:8px;padding:6px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none">
+        <button class="plat-add-btn" onclick="addSettingItem('${s.key}')">＋ 追加</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.addSettingItem = (key) => {
+  const input = document.getElementById('sinput-' + key);
+  const val = input?.value?.trim();
+  if (!val) return;
+  const map = { platforms: PLATFORM_OPTIONS, vpn: VPN_OPTIONS, subtitles: SUBTITLE_OPTIONS,
+                cut: CUT_OPTIONS, paid: PAID_OPTIONS, relation: RELATION_OPTIONS };
+  if (map[key] && !map[key].includes(val)) {
+    map[key].push(val);
+    input.value = '';
+    renderSettingsSections();
+  }
+};
+
+window.removeSettingItem = (key, idx) => {
+  const map = { platforms: PLATFORM_OPTIONS, vpn: VPN_OPTIONS, subtitles: SUBTITLE_OPTIONS,
+                cut: CUT_OPTIONS, paid: PAID_OPTIONS, relation: RELATION_OPTIONS };
+  if (map[key]) {
+    map[key].splice(idx, 1);
+    renderSettingsSections();
+  }
+};
+
+window.saveSettings = async () => {
+  if (!isAdmin) return;
+  try {
+    await setDoc(doc(db, 'settings', 'options'), {
+      platforms: PLATFORM_OPTIONS,
+      vpn:       VPN_OPTIONS,
+      subtitles: SUBTITLE_OPTIONS,
+      cut:       CUT_OPTIONS,
+      paid:      PAID_OPTIONS,
+      relation:  RELATION_OPTIONS,
+    });
+    showToast('設定を保存しました ✓');
+    // 管理者フォームの選択肢も再レンダリング
+    if (openModalId) renderModal(openModalId);
+  } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
+};
 
 // ── STATE ──────────────────────────────────────────────────────────────
 let currentUser = null;
@@ -122,10 +220,35 @@ async function loadDramasFromDB() {
   }
   render();
 }
-loadDramasFromDB();
-_exposeToWindow(); // module→通常scriptブリッジを登録
+// 設定を読み込んでからデータ取得
+loadSettings().then(() => {
+  loadDramasFromDB();
+  _exposeToWindow();
+});
 
 // ── USER ACTIONS ───────────────────────────────────────────────────────
+// Coryリスト用フィールド保存（管理者のみ）
+window.saveCoryField = async (id, field, value) => {
+  if (!isAdmin) return;
+  try {
+    const update = { [field]: value };
+    // recommend変更時はrateも再計算
+    if (field === 'recommend') {
+      const d = localDramas.find(x => String(x._id||x.title) === String(id));
+      if (d) {
+        update.rate = Math.round(value * (d.beginner_score||0) * 10) / 10;
+      }
+    }
+    await updateDoc(doc(db, 'dramas', String(id)), update);
+    // localDramasを更新
+    const d = localDramas.find(x => String(x._id||x.title) === String(id));
+    if (d) Object.assign(d, update);
+    showToast('保存しました ✓');
+  } catch(e) {
+    showToast('保存エラー: ' + e.message, 'error');
+  }
+};
+
 window.saveUserStatus = async (id, status) => {
   if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
   const key = String(id);
@@ -400,8 +523,11 @@ window.submitAdminForm = async () => {
       showToast('追加しました ✓');
     }
     closeAdminModal();
-    await loadDramasFromDB();
-_exposeToWindow(); // module→通常scriptブリッジを登録
+    await // 設定を読み込んでからデータ取得
+loadSettings().then(() => {
+  loadDramasFromDB();
+  _exposeToWindow();
+});
   } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
 };
 
@@ -414,8 +540,11 @@ window.deleteDrama = async (id, e) => {
     await deleteDoc(doc(db,'dramas',id));
     showToast('削除しました');
     closeMD();
-    await loadDramasFromDB();
-_exposeToWindow(); // module→通常scriptブリッジを登録
+    await // 設定を読み込んでからデータ取得
+loadSettings().then(() => {
+  loadDramasFromDB();
+  _exposeToWindow();
+});
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
 };
 
@@ -488,8 +617,11 @@ window.uploadBuiltinToFirestore = async () => {
   }
   await batch.commit();
   showToast(`${count}件の移行が完了しました ✓`);
-  await loadDramasFromDB();
-_exposeToWindow(); // module→通常scriptブリッジを登録
+  await // 設定を読み込んでからデータ取得
+loadSettings().then(() => {
+  loadDramasFromDB();
+  _exposeToWindow();
+});
 };
 
 // ── module → 通常script へのブリッジ ─────────────────────────────────
@@ -506,7 +638,7 @@ function _exposeToWindow() {
   window._CARD_MODE_SET    = (m) => { CARD_MODE = m; };
   window._F_SET            = (f) => { F = f; };
   window._S_SET            = (s) => { S = s; };
-  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; };
+  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; };
   window._GET_FILTER_PLT   = () => FILTER_PLT;
   window._GET_FILTER_STATUS= () => FILTER_STATUS;
   window._GET_FILTER_STUDIO= () => FILTER_STUDIO;
@@ -550,6 +682,7 @@ let FILTER_PLT    = [];  // 配信媒体
 let FILTER_STATUS = [];  // 放送ステータス
 let FILTER_STUDIO = [];  // 制作会社
 let FILTER_YEAR   = [];  // 放送年
+let FILTER_VPN    = [];  // VPN
 let openModalId = null;
 
 window.setView = v => {
@@ -573,7 +706,7 @@ document.addEventListener('click', e => {
 });
 // チェックボックスの変更
 window.onFilterChange = function(type, val, checked) {
-  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR };
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN };
   const arr = map[type];
   if (checked) { if (!arr.includes(val)) arr.push(val); }
   else { const i = arr.indexOf(val); if (i>=0) arr.splice(i,1); }
@@ -583,7 +716,7 @@ window.onFilterChange = function(type, val, checked) {
 };
 // ボタンラベルを選択数に応じて更新
 function updateFilterBtnLabel(type) {
-  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR };
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN };
   const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年' };
   const arr = map[type];
   const btn = document.getElementById('fbtn-' + type);
@@ -600,6 +733,7 @@ function renderFilterTags() {
     ...FILTER_STATUS.map(v => ({type:'status', val:v})),
     ...FILTER_STUDIO.map(v => ({type:'studio', val:v})),
     ...FILTER_YEAR.map(v => ({type:'year', val:v})),
+    ...FILTER_VPN.map(v => ({type:'vpn', val:v})),
   ];
   wrap.innerHTML = all.map(({type, val}) =>
     `<span class="ftag" onclick="onFilterChange('${type}','${val}',false)">${val} ✕</span>`
@@ -607,8 +741,8 @@ function renderFilterTags() {
 }
 // フィルターを全リセット
 window.resetAllFilters = function() {
-  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[];
-  ['plt','status','studio','year'].forEach(t => {
+  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[];
+  ['plt','status','studio','year','vpn'].forEach(t => {
     updateFilterBtnLabel(t);
     document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
   });
@@ -648,12 +782,26 @@ function go() {
   if (FILTER_YEAR.length > 0) {
     l = l.filter(d => FILTER_YEAR.some(v => v === (d.year||'未定')));
   }
+  if (FILTER_VPN.length > 0) {
+    l = l.filter(d => {
+      // platforms配列からVPN情報を取得
+      const vpns = d.platforms && d.platforms.length
+        ? d.platforms.map(p => p.vpn || '不要')
+        : [(d.vpn === 'あり' ? '要（日本）' : '不要')];
+      return FILTER_VPN.some(v => vpns.some(pv => pv === v));
+    });
+  }
 
   if (Q) { const q=Q.toLowerCase(); l=l.filter(d=>(d.title+d.cp+(d.cp_top||'')+(d.cp_bottom||'')+d.synopsis+d.studio).toLowerCase().includes(q)); }
   l.sort((a,b) => {
     if(S==='new') return (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1;
     if(S==='old') return (a.sort_date||'9999') > (b.sort_date||'9999') ? 1 : -1;
-    if(S==='urate') return (b.user_rate_avg||0) - (a.user_rate_avg||0);
+    if(S==='urate')  return (b.user_rate_avg||0) - (a.user_rate_avg||0);
+    if(S==='myrate') {
+      const ua = userDoc.dramas?.[String(a._id||a.title)]?.rate || 0;
+      const ub = userDoc.dramas?.[String(b._id||b.title)]?.rate || 0;
+      return ub - ua;
+    }
     if(S==='rec') return b.recommend - a.recommend;
     if(S==='az')  return a.title.localeCompare(b.title);
     return 0;
@@ -690,10 +838,14 @@ function buildFilterDropdowns() {
   const ddStudio = document.getElementById('dd-studio');
   const ddYear   = document.getElementById('dd-year');
 
+  const vpnItems = ['不要(日本)', '要(日本以外)', '未登録'];
+  const ddVpn    = document.getElementById('dd-vpn');
+
   if (ddPlt)    ddPlt.innerHTML    = makeItems('plt', platItems);
   if (ddStatus) ddStatus.innerHTML = makeItems('status', statusItems);
   if (ddStudio) ddStudio.innerHTML = makeItems('studio', studios);
   if (ddYear)   ddYear.innerHTML   = makeItems('year', years);
+  if (ddVpn)    ddVpn.innerHTML    = makeItems('vpn', vpnItems);
 }
 
 function strs(n, mx=5) { let h=''; for(let i=1;i<=mx;i++) h+=`<span class="star${i<=n?' on':''}">${i<=n?'★':'☆'}</span>`; return h; }
@@ -765,6 +917,52 @@ function card(d, listMode) {
     ? `<div class="crating"><div class="stars">${strs(d.recommend)}</div></div>`
     : '';
 
+  // Coryリスト管理者用インライン編集フォーム
+  const coryEditHtml = (mode === 'cory' && isAdmin) ? `
+    <div class="cory-edit-form" onclick="event.stopPropagation()">
+      <div class="cef-row">
+        <label>ステータス</label>
+        <select onchange="saveCoryField('${id}','cory_status',this.value)">
+          ${['未視聴','視聴中','視聴済み','Drop out'].map(s =>
+            `<option value="${s}"${(d.cory_status||'未視聴')===s?' selected':''}>${s}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="cef-row">
+        <label>おすすめ度</label>
+        <input type="number" min="0" max="5" step="0.5" value="${d.recommend||0}"
+          onchange="saveCoryField('${id}','recommend',parseFloat(this.value)||0)"
+          style="width:60px">
+      </div>
+      <div class="cef-row">
+        <label>コメント</label>
+        <textarea rows="2" onchange="saveCoryField('${id}','comment',this.value)">${d.comment||''}</textarea>
+      </div>
+    </div>` : '';
+
+  // Coryリスト管理者用インライン編集フォーム
+  const coryEditHtml = (mode === 'cory' && isAdmin) ? `
+    <div class="cory-edit-form" onclick="event.stopPropagation()">
+      <div class="cef-row">
+        <label>ステータス</label>
+        <select onchange="saveCoryField('${id}','cory_status',this.value)">
+          ${['未視聴','視聴中','視聴済み','Drop out'].map(s =>
+            `<option value="${s}"${(d.cory_status||'未視聴')===s?' selected':''}>${s}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="cef-row">
+        <label>おすすめ度</label>
+        <input type="number" min="0" max="5" step="0.5" value="${d.recommend||0}"
+          onchange="saveCoryField('${id}','recommend',parseFloat(this.value)||0)"
+          style="width:60px">
+      </div>
+      <div class="cef-row">
+        <label>コメント</label>
+        <textarea rows="2" onchange="saveCoryField('${id}','comment',this.value)">${d.comment||''}</textarea>
+      </div>
+    </div>` : '';
+
   // ステータス変更セレクト（マイリスト・Coryリストでログイン時に表示）
   const showStatusSel = (mode === 'mylist' || mode === 'cory') && currentUser;
   const userBtns = showStatusSel ? `
@@ -826,6 +1024,7 @@ function card(d, listMode) {
         ${userAvgHtml}
         ${myRateHtml}
         ${myMemoHtml}
+        ${coryEditHtml}
         <div class="card-btns">${userBtns}${adminBtns}</div>
       </div>
     </div>`;
@@ -1137,6 +1336,26 @@ select option{background:var(--dark2);}
 /* ユーザー平均評価 */
 .user-avg-rate{margin-top:6px;font-size:11px;color:var(--ll);display:flex;align-items:center;gap:4px;}
 .urate-count{font-size:10px;color:var(--muted);}
+/* 項目編集モーダル */
+.settings-section{margin-bottom:20px;}
+.settings-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+.stag-item{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
+  background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.25);
+  border-radius:20px;font-size:12px;color:var(--ll);}
+.stag-del{background:none;border:none;color:rgba(155,126,200,.5);cursor:pointer;
+  font-size:11px;padding:0;line-height:1;transition:color .2s;}
+.stag-del:hover{color:var(--rl);}
+
+/* Coryリスト インライン編集フォーム */
+.cory-edit-form{margin-top:10px;padding:10px;background:rgba(212,168,67,.06);
+  border:1px solid rgba(212,168,67,.2);border-radius:8px;display:flex;flex-direction:column;gap:7px;}
+.cef-row{display:flex;flex-direction:column;gap:3px;}
+.cef-row label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);}
+.cef-row select,.cef-row input{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:6px;padding:4px 8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:12px;outline:none;}
+.cef-row textarea{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:6px;padding:4px 8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;
+  font-size:12px;outline:none;resize:vertical;min-height:44px;width:100%;}
 .slabel{background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);color:var(--gold);
   padding:1px 5px;border-radius:7px;font-size:9px;margin-left:4px;}
 .utag{margin-left:4px;font-size:9px;color:var(--ll);background:rgba(155,126,200,.1);padding:1px 5px;border-radius:7px;}
@@ -1701,10 +1920,9 @@ textarea:focus{border-color:var(--lav);}
         <span class="sb-icon si-gold">＋</span>
         <span>作品データ登録</span>
       </button>
-      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
-        <span class="sb-icon si-gold">⬆</span>
-        <span>データ登録用項目編集</span>
-        <span class="sb-badge b-gold">管理者</span>
+      <button class="sb-item admin-only" style="display:none" onclick="openSettingsModal()">
+        <span class="sb-icon si-gold">📋</span>
+        <span>項目編集</span>
       </button>
 
     </div><!-- /.sb-body -->
@@ -1753,6 +1971,7 @@ textarea:focus{border-color:var(--lav);}
     <select id="srt">
       <option value="new">新しい順</option>
       <option value="urate">みんなの評価が高い順</option>
+      <option value="myrate">自分の評価が高い順</option>
       <option value="rec">Coryのおすすめ順</option>
       <option value="az">タイトル順</option>
     </select>
@@ -1785,6 +2004,11 @@ textarea:focus{border-color:var(--lav);}
     <div class="multi-select-wrap">
       <button class="filter-btn" id="fbtn-year" onclick="toggleDropdown('dd-year')">放送年 ▾</button>
       <div class="multi-dropdown" id="dd-year"></div>
+    </div>
+    <!-- VPN -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-vpn" onclick="toggleDropdown('dd-vpn')">VPN ▾</button>
+      <div class="multi-dropdown" id="dd-vpn"></div>
     </div>
     <!-- 選択中タグ & リセット -->
     <div id="filter-tags"></div>
@@ -1955,6 +2179,28 @@ textarea:focus{border-color:var(--lav);}
     <div class="am-footer">
       <button class="am-cancel" onclick="closeAdminModal()">キャンセル</button>
       <button class="am-save" onclick="submitAdminForm()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 項目編集モーダル（管理者のみ） -->
+<div class="admin-overlay" id="settingsModal">
+  <div class="admin-modal">
+    <div class="am-head">
+      <h2>📋 項目編集</h2>
+      <button class="am-close" onclick="closeSettingsModal()">✕</button>
+    </div>
+    <div class="am-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">
+        各項目の選択肢を追加・削除できます。変更後は「保存」ボタンを押してください。
+      </p>
+
+      <div id="settings-sections"></div>
+
+    </div>
+    <div class="am-footer">
+      <button class="am-cancel" onclick="closeSettingsModal()">キャンセル</button>
+      <button class="am-save" onclick="saveSettings()">💾 保存</button>
     </div>
   </div>
 </div>

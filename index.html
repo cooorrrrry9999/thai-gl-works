@@ -327,14 +327,21 @@ async function updateDramaAvgRate(dramaId, oldRate, newRate, isNew) {
 
 // ── ADMIN: DRAMA CRUD ──────────────────────────────────────────────────
 let platformRows = []; // 視聴媒体の動的行
+let cpRows = [];       // CP複数登録の動的行
 
 window.openAdminAdd = () => {
   if (!isAdmin) return;
   platformRows = [];
+  cpRows = [];
   document.getElementById('adminModal').classList.add('open');
   document.getElementById('adminModalTitle').textContent = '作品を追加';
   document.getElementById('adminDramaId').value = '';
   resetAdminForm();
+  // DOMが確実に存在するタイミングでレンダリング
+  setTimeout(() => {
+    renderPlatformRows();
+    renderCpRows();
+  }, 50);
 };
 
 window.openAdminEdit = (id, e) => {
@@ -346,6 +353,11 @@ window.openAdminEdit = (id, e) => {
   document.getElementById('adminModalTitle').textContent = '作品を編集';
   document.getElementById('adminDramaId').value = d._id || d.title;
   fillAdminForm(d);
+  // DOMが確実に存在するタイミングでレンダリング
+  setTimeout(() => {
+    renderPlatformRows();
+    renderCpRows();
+  }, 50);
 };
 
 function resetAdminForm() {
@@ -365,6 +377,8 @@ function resetAdminForm() {
   toggleOriginalFields();
   platformRows = [];
   renderPlatformRows();
+  cpRows = [];
+  renderCpRows();
   renderUrlArrayField('pilot_urls', []);
   renderUrlArrayField('ost_urls', []);
 }
@@ -376,8 +390,16 @@ function fillAdminForm(d) {
   // release_start: 旧releaseフィールドから移行
   set('af_release_start', d.release_start || (d.release && d.release !== '未定' ? d.release + (d.release.length===7?'-01':'') : ''));
   set('af_release_end', d.release_end || '');
-  set('af_cp_top', d.cp_top || (d.cp ? d.cp.split(/\n/)[0] : ''));
-  set('af_cp_bottom', d.cp_bottom || (d.cp ? d.cp.split(/\n/)[1] : ''));
+  // CP複数登録：cps配列があれば使用、なければ旧フィールドから変換
+  if (d.cps && d.cps.length) {
+    cpRows = d.cps.map(c => ({...c}));
+  } else {
+    cpRows = [];
+    const top = d.cp_top || (d.cp ? d.cp.split(/[\n/]/)[0].trim() : '');
+    const btm = d.cp_bottom || (d.cp ? d.cp.split(/[\n/]/)[1]?.trim() : '');
+    if (top || btm) cpRows.push({ top, bottom: btm||'', ship_name: '', note: '' });
+  }
+  renderCpRows();
   set('af_studio', d.studio);
   set('af_ep_count', d.ep_count || '');
   set('af_ep_minutes', d.ep_minutes || '');
@@ -453,6 +475,32 @@ window.platSet = (i, key, val) => { platformRows[i][key] = val; };
 window.platDel = (i) => { platformRows.splice(i,1); renderPlatformRows(); };
 window.platAdd = () => { platformRows.push({platform:'',vpn:'',subtitle:'',cut_uncut:'',paid:''}); renderPlatformRows(); };
 
+// ── CP複数登録 ────────────────────────────────────────────────────────
+function renderCpRows() {
+  const wrap = document.getElementById('cp_rows');
+  if (!wrap) return;
+  wrap.innerHTML = cpRows.map((row, i) => `
+    <div class="plat-row" style="flex-wrap:wrap;gap:5px">
+      <input type="text" placeholder="Top俳優名" value="${row.top||''}"
+        oninput="cpSet(${i},'top',this.value)"
+        style="flex:1;min-width:100px;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:6px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none">
+      <input type="text" placeholder="Bottom俳優名" value="${row.bottom||''}"
+        oninput="cpSet(${i},'bottom',this.value)"
+        style="flex:1;min-width:100px;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:6px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none">
+      <input type="text" placeholder="CP名（例:FreenBecky）" value="${row.ship_name||''}"
+        oninput="cpSet(${i},'ship_name',this.value)"
+        style="flex:1;min-width:120px;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:6px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none">
+      <input type="text" placeholder="備考（例:サブCP）" value="${row.note||''}"
+        oninput="cpSet(${i},'note',this.value)"
+        style="flex:1;min-width:80px;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:6px 10px;color:var(--text);font-family:inherit;font-size:13px;outline:none">
+      <button type="button" class="plat-del" onclick="cpDel(${i})">✕</button>
+    </div>
+  `).join('');
+}
+window.cpSet = (i, key, val) => { cpRows[i][key] = val; };
+window.cpDel = (i) => { cpRows.splice(i,1); renderCpRows(); };
+window.cpAdd = () => { cpRows.push({top:'',bottom:'',ship_name:'',note:''}); renderCpRows(); };
+
 function renderUrlArrayField(fieldId, urls) {
   const wrap = document.getElementById(fieldId + '_rows');
   if (!wrap) return;
@@ -504,9 +552,11 @@ window.submitAdminForm = async () => {
     studio:         get('studio'),
     release_start,
     release_end,
-    cp_top:         get('cp_top'),
-    cp_bottom:      get('cp_bottom'),
-    cp:             [get('cp_top'), get('cp_bottom')].filter(Boolean).join(' / '),
+    cps:            cpRows.filter(r => r.top || r.bottom),
+    // 後方互換：旧フィールドも先頭CPから自動生成
+    cp_top:         cpRows[0]?.top || '',
+    cp_bottom:      cpRows[0]?.bottom || '',
+    cp:             cpRows.filter(r=>r.top||r.bottom).map(r=>[r.top,r.bottom].filter(Boolean).join(' / ')).join(' & '),
     ep_count:       parseInt(get('ep_count'))||0,
     ep_minutes:     parseInt(get('ep_minutes'))||0,
     synopsis:       get('synopsis'),
@@ -577,6 +627,8 @@ function _exposeToWindow() {
   window.renderFilterTags  = renderFilterTags;
   window.updateFilterBtnLabel = updateFilterBtnLabel;
   window.buildFilterDropdowns = buildFilterDropdowns;
+  window.renderCpRows      = renderCpRows;
+  window.renderPlatformRows = renderPlatformRows;
   window.updateModeBar     = typeof updateModeBar === 'function' ? updateModeBar : ()=>{};
   window._CARD_MODE_SET    = (m) => { CARD_MODE = m; };
   window._F_SET            = (f) => { F = f; };
@@ -759,7 +811,15 @@ function go() {
     });
   }
 
-  if (Q) { const q=Q.toLowerCase(); l=l.filter(d=>(d.title+d.cp+(d.cp_top||'')+(d.cp_bottom||'')+d.synopsis+d.studio).toLowerCase().includes(q)); }
+  if (Q) {
+    const q = Q.toLowerCase();
+    l = l.filter(d => {
+      const cpText = d.cps && d.cps.length
+        ? d.cps.map(c=>(c.top||'')+(c.bottom||'')+(c.ship_name||'')).join(' ')
+        : (d.cp||'')+(d.cp_top||'')+(d.cp_bottom||'');
+      return (d.title + cpText + (d.synopsis||'') + (d.studio||'')).toLowerCase().includes(q);
+    });
+  }
   l.sort((a,b) => {
     if(S==='new') return (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1;
     if(S==='old') return (a.sort_date||'9999') > (b.sort_date||'9999') ? 1 : -1;
@@ -852,7 +912,10 @@ function card(d, listMode) {
   const sub    = d.is_subcap === 'BLサブカプ';
   const status = calcStatus(d);
   const isUp   = status === '放送前';
-  const cp     = (d.cp || '').split(/\n/).filter(Boolean).join(' / ');
+  // CP表示：cps配列があれば使用、なければ旧cpフィールドから
+  const cp = d.cps && d.cps.length
+    ? d.cps.filter(c=>c.top||c.bottom).map(c => c.ship_name || [c.top,c.bottom].filter(Boolean).join(' / ')).join(' & ')
+    : (d.cp || '').split(/\n/).filter(Boolean).join(' / ');
   const year   = (d.release_start || d.release || '─').slice(0, 7);
   const stCls  = status === '放送済み' ? 'done' : status === '放送中' ? 'now' : 'pre';
   const mode   = CARD_MODE || 'search';
@@ -1026,11 +1089,23 @@ function renderModal(id) {
   const d = localDramas.find(x=>String(x._id||x.title)===id);
   if (!d) return;
   const ud = userDoc.dramas?.[id] || {};
-  const cp = (d.cp||'').split(/\n/).filter(Boolean).join(' / ');
+  // モーダルのCP表示
+  const cpList = d.cps && d.cps.length
+    ? d.cps.filter(c=>c.top||c.bottom)
+    : d.cp ? [{ top: d.cp_top||d.cp, bottom: d.cp_bottom||'', ship_name:'', note:'' }] : [];
+  const cpDisplay = cpList.map(c => c.ship_name || [c.top,c.bottom].filter(Boolean).join(' / ')).join(' & ');
+  const cp = cpDisplay;
   const status = calcStatus(d);
   document.getElementById('mt').textContent = d.title;
   document.getElementById('mc').textContent = cp ? '👩‍❤️‍👩 ' + cp : '';
   let b = '';
+  // CP一覧（複数ある場合はテーブル表示）
+  if (cpList.length > 1) {
+    b += `<div class="msec"><div class="mlab">👩‍❤️‍👩 キャスト・CP</div>
+      <table class="plat-table"><thead><tr><th>Top</th><th>Bottom</th><th>CP名</th><th>備考</th></tr></thead><tbody>
+      ${cpList.map(c=>`<tr><td>${c.top||'─'}</td><td>${c.bottom||'─'}</td><td>${c.ship_name||'─'}</td><td>${c.note||'─'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
   // あらすじ
   if (d.synopsis && d.synopsis !== '?') b += `<div class="msec"><div class="mlab">📖 あらすじ</div><div class="mcont">${(d.synopsis||'').replace(/\n/g,'<br>')}</div></div>`;
   // Cory評価
@@ -2039,11 +2114,12 @@ textarea:focus{border-color:var(--lav);}
 
       <!-- キャスト・CP -->
       <div class="am-section">
-        <div class="am-section-title">🎭 キャスト・CP</div>
-        <div class="form-grid">
-          <div class="form-group"><label>Top 俳優名</label><input type="text" id="af_cp_top" placeholder="例: Freen"></div>
-          <div class="form-group"><label>Bottom 俳優名</label><input type="text" id="af_cp_bottom" placeholder="例: Becky"></div>
+        <div class="am-section-title">🎭 キャスト・CP（複数登録可）</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+          Top俳優名 / Bottom俳優名 / CP名（例:FreenBecky） / 備考（例:サブCP）の順で入力
         </div>
+        <div id="cp_rows"></div>
+        <button type="button" class="plat-add-btn" onclick="cpAdd()">＋ CPを追加</button>
       </div>
 
       <!-- 作品時間 -->

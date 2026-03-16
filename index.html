@@ -817,7 +817,8 @@ function go() {
       const cpText = d.cps && d.cps.length
         ? d.cps.map(c=>(c.top||'')+(c.bottom||'')+(c.ship_name||'')).join(' ')
         : (d.cp||'')+(d.cp_top||'')+(d.cp_bottom||'');
-      return (d.title + cpText + (d.synopsis||'') + (d.studio||'')).toLowerCase().includes(q);
+      const authorText = (d.original_author||'') + (d.original_title||'');
+      return (d.title + cpText + (d.synopsis||'') + (d.studio||'') + authorText).toLowerCase().includes(q);
     });
   }
   l.sort((a,b) => {

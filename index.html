@@ -75,6 +75,7 @@ window.logout = async () => {
 
 onAuthStateChanged(auth, async user => {
   currentUser = user;
+  window._currentUser = user; // 通常scriptから参照できるよう同期
   isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   updateAuthUI();
   if (user) {
@@ -85,10 +86,10 @@ onAuthStateChanged(auth, async user => {
     showUserFilters(false);
   }
   render();
-  document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
-  // サイドバー管理者セクションも表示制御
-  const sbAdminSection = document.getElementById('sb-admin-section');
-  if (sbAdminSection) sbAdminSection.style.display = isAdmin ? '' : 'none';
+  // admin-only要素の表示制御（サイドバー含む）
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
 });
 
 async function loadUserDoc(uid) {
@@ -549,10 +550,11 @@ function go() {
   let l = [...localDramas];
   if (Y !== 'all') l = l.filter(d => d.year === Y);
   if (STATUS_F) l = l.filter(d => calcStatus(d) === STATUS_F);
-  if (F==='r')   l = l.filter(d => d.rate > 0);
-  if (F==='t')   l = l.filter(d => d.recommend >= 5);
-  if (F==='w')   l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
-  if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
+  if (F==='r')    l = l.filter(d => d.rate > 0);
+  if (F==='t')    l = l.filter(d => d.recommend >= 5);
+  if (F==='w')    l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
+  if (F==='fav')  l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
+
   if (REL) l = l.filter(d => d.relation === REL);
   if (PLT) l = l.filter(d => {
     if (d.platforms && d.platforms.length) return d.platforms.some(p => p.platform === PLT);
@@ -1437,60 +1439,55 @@ textarea:focus{border-color:var(--lav);}
 
     <div class="sb-body">
 
-      <!-- 作品を見る -->
-      <div class="sb-section-label">作品を見る</div>
+      <!-- 作品を探す -->
+      <div class="sb-section-label">作品を探す</div>
 
       <button class="sb-item active" id="sb-all" onclick="sbNav('all')">
         <span class="sb-icon si-purple">🎬</span>
-        <span>全ての作品</span>
-      </button>
-      <button class="sb-item sb-item-sub" onclick="sbNav('status-done')">放送済み</button>
-      <button class="sb-item sb-item-sub" onclick="sbNav('status-now')">放送中</button>
-      <button class="sb-item sb-item-sub" onclick="sbNav('status-pre')">放送前</button>
-
-      <hr class="sb-divider">
-
-      <!-- 評価で絞り込む -->
-      <div class="sb-section-label">評価で見る</div>
-
-      <button class="sb-item" id="sb-rated" onclick="sbNav('rated')">
-        <span class="sb-icon si-gold">⭐</span>
-        <span>評価あり</span>
-      </button>
-      <button class="sb-item" id="sb-top" onclick="sbNav('top')">
-        <span class="sb-icon si-pink">★</span>
-        <span>★5オススメのみ</span>
+        <span>作品を探す</span>
       </button>
 
       <hr class="sb-divider">
 
-      <!-- マイリスト（ログイン時） -->
+      <!-- マイリスト（ログイン限定） -->
       <div class="sb-section-label">マイリスト</div>
 
-      <button class="sb-item" id="sb-watched" onclick="sbNav('watched')">
-        <span class="sb-icon si-teal">✓</span>
-        <span>視聴済み</span>
+      <button class="sb-item" id="sb-mylist" onclick="sbNav('mylist')">
+        <span class="sb-icon si-teal">👤</span>
+        <span>マイリスト</span>
         <span class="sb-badge b-purple" id="sb-watched-count" style="display:none">0</span>
-      </button>
-      <button class="sb-item" id="sb-watching" onclick="sbNav('watching')">
-        <span class="sb-icon si-teal">▶</span>
-        <span>視聴中</span>
       </button>
 
       <hr class="sb-divider">
 
-      <!-- 俳優から探す（将来実装） -->
-      <div class="sb-section-label">俳優から探す</div>
+      <!-- Coryの視聴リスト -->
+      <div class="sb-section-label">Coryの視聴リスト</div>
+
+      <button class="sb-item" id="sb-cory" onclick="sbNav('cory')">
+        <span class="sb-icon si-pink">🌸</span>
+        <span>Coryの視聴リスト</span>
+      </button>
+
+      <hr class="sb-divider">
+
+      <!-- ThaiGLタレント名鑑 -->
+      <div class="sb-section-label">ThaiGLタレント名鑑</div>
 
       <button class="sb-item" onclick="showToast('近日公開予定です', 'warn')">
         <span class="sb-icon si-teal">👩</span>
-        <span>名前で探す</span>
+        <span>タレント名鑑</span>
         <span class="sb-badge b-purple">準備中</span>
       </button>
+
+      <hr class="sb-divider">
+
+      <!-- 次何見る？ -->
+      <div class="sb-section-label">次何見る？</div>
+
       <button class="sb-item" onclick="showToast('近日公開予定です', 'warn')">
-        <span class="sb-icon si-teal">📋</span>
-        <span>出演作品で探す</span>
-        <span class="sb-badge b-purple">準備中</span>
+        <span class="sb-icon si-gold">🎲</span>
+        <span>次何見る？</span>
+        <span class="sb-badge b-gold">準備中</span>
       </button>
 
       <hr class="sb-divider">
@@ -1515,8 +1512,31 @@ textarea:focus{border-color:var(--lav);}
 
       <a class="sb-item" href="https://x.com/cory_fbshipper" target="_blank">
         <span class="sb-icon si-gray">𝕏</span>
-        <span>＠cory_fbshipper</span>
+        <span>X ＠cory_fbshipper</span>
       </a>
+      <a class="sb-item" href="https://note.com/cory_fbshipper" target="_blank">
+        <span class="sb-icon si-gray">📝</span>
+        <span>Note ＠cory_fbshipper</span>
+      </a>
+
+      <hr class="sb-divider">
+
+      <!-- 管理者メニュー（管理者のみ表示） -->
+      <div class="sb-section-label admin-only" id="sb-admin-section" style="display:none">管理者メニュー</div>
+
+      <button class="sb-item admin-only" id="sb-admin-cory" style="display:none" onclick="sbNav('admin-cory')">
+        <span class="sb-icon si-gold">🌸</span>
+        <span>視聴リスト管理</span>
+      </button>
+      <button class="sb-item admin-only" id="sb-admin-add" style="display:none" onclick="openAdminAdd()">
+        <span class="sb-icon si-gold">＋</span>
+        <span>作品データ登録</span>
+      </button>
+      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
+        <span class="sb-icon si-gold">⬆</span>
+        <span>データ登録用項目編集</span>
+        <span class="sb-badge b-gold">管理者</span>
+      </button>
 
     </div><!-- /.sb-body -->
   </nav>
@@ -1538,7 +1558,7 @@ textarea:focus{border-color:var(--lav);}
       <button class="logout-btn" onclick="logout()">ログアウト</button>
     </div>
   </div>
-  <div class="update-note">＠cory_fbshipper 2026/03更新</div>
+  <!-- 更新日非表示 -->
   <div class="petals" id="petals"></div>
   <h1>🌸 タイGL作品一覧</h1>
   <p class="hero-sub">Thai Girls Love Drama Complete Guide</p>
@@ -1800,15 +1820,46 @@ window.sbNav = function(key) {
   document.querySelectorAll('.sb-item').forEach(el => el.classList.remove('active'));
   document.getElementById('sb-' + key)?.classList.add('active');
 
-  // メインのフィルターを操作
-  if (key === 'all')      { STATUS_F = ''; setF('a'); }
-  if (key === 'rated')    { STATUS_F = ''; setF('r'); }
-  if (key === 'top')      { STATUS_F = ''; setF('t'); }
-  if (key === 'watched')  { STATUS_F = ''; setF('w'); }
-  if (key === 'watching') { STATUS_F = ''; setF('fav'); }
-  if (key === 'status-done') { setF('a'); STATUS_F='放送済み'; render(); highlightStatusBtn('放送済み'); }
-  if (key === 'status-now')  { setF('a'); STATUS_F='放送中';   render(); highlightStatusBtn('放送中'); }
-  if (key === 'status-pre')  { setF('a'); STATUS_F='放送前';   render(); highlightStatusBtn('放送前'); }
+  // ── 作品を探す → 全作品一覧を表示 ──────────────────────────────────
+  if (key === 'all') {
+    STATUS_F = '';
+    setF('a');
+  }
+
+  // ── マイリスト → ログイン済みなら視聴済み表示・未ログインはログイン促す ──
+  if (key === 'mylist') {
+    const user = window._currentUser;
+    if (user) {
+      STATUS_F = '';
+      setF('w');
+    } else {
+      showToast('マイリストを使うにはログインが必要です', 'warn');
+      // ログインボタンを目立たせる
+      const btn = document.getElementById('loginBtn');
+      if (btn) { btn.style.animation = 'none'; btn.offsetHeight; btn.style.animation = ''; }
+    }
+  }
+
+  // ── Coryの視聴リスト → 評価の高い順に全作品を表示 ──────────────────
+  if (key === 'cory') {
+    STATUS_F = '';
+    F = 'a';       // フィルターなし（全作品）
+    S = 'rec';     // おすすめ順（高い順）
+    // ソートセレクトボックスも連動して更新
+    const srtEl = document.getElementById('srt');
+    if (srtEl) srtEl.value = 'rec';
+    render();
+  }
+
+  // ── 管理者：視聴リスト管理 → cory_statusフィルターで表示 ─────────────
+  if (key === 'admin-cory') {
+    STATUS_F = '';
+    F = 'a';
+    S = 'rec';
+    const srtEl = document.getElementById('srt');
+    if (srtEl) srtEl.value = 'rec';
+    render();
+  }
 
   // スクロールをトップに
   document.getElementById('mainWrap').scrollTo(0, 0);

@@ -96,9 +96,11 @@ async function loadUserDoc(uid) {
   const snap = await getDoc(ref);
   userDoc = snap.exists() ? snap.data() : { dramas: {} };
   if (!userDoc.dramas) userDoc.dramas = {};
+  window._userDoc = userDoc;
 }
 async function saveUserDoc() {
   if (!currentUser) return;
+  window._userDoc = userDoc;
   await setDoc(doc(db, 'users', currentUser.uid), userDoc, { merge: true });
 }
 
@@ -1822,7 +1824,8 @@ function highlightStatusBtn(s) {
 // サイドバーのカウント・状態をrenderに連動して更新
 function updateSidebarState() {
   // 視聴済みカウント
-  const wc = Object.values(userDoc.dramas||{}).filter(v => v.status === '視聴済み').length;
+  const doc = window._userDoc || { dramas: {} };
+  const wc = Object.values(doc.dramas||{}).filter(v => v.status === '視聴済み').length;
   const wcEl = document.getElementById('sb-watched-count');
   if (wcEl) {
     wcEl.textContent = wc;

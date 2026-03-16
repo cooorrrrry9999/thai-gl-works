@@ -517,7 +517,7 @@ function showToast(msg, type='ok') {
 }
 
 // ── FILTER / SORT STATE ────────────────────────────────────────────────
-let V='g', F='a', Q='', S='new';
+let V='g', F='a', Q='', S='new', Y='all', STATUS_F=''; // Y/STATUS_Fは後方互換用
 // カード表示モード: 'search'=作品を探す / 'mylist'=マイリスト / 'cory'=Coryの視聴リスト
 let CARD_MODE = 'search';
 // 複数選択フィルター（配列）
@@ -594,7 +594,6 @@ window.resetAllFilters = function() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('q').addEventListener('input', e=>{Q=e.target.value;render();});
   document.getElementById('srt').addEventListener('change', e=>{S=e.target.value;render();});
-  buildYearTabs();
   const c = document.getElementById('petals');
   for(let i=0;i<18;i++){const p=document.createElement('div');p.className='petal';p.style.cssText=`left:${Math.random()*100}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*8}s;opacity:${.1+Math.random()*.25};transform:scale(${.5+Math.random()})`;c.appendChild(p);}
   updateHeroStats();
@@ -602,8 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function go() {
   let l = [...localDramas];
-  if (Y !== 'all') l = l.filter(d => d.year === Y);
-  if (STATUS_F) l = l.filter(d => calcStatus(d) === STATUS_F);
   // マイリストフィルター
   if (F==='w')   l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴済み');
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
@@ -640,15 +637,9 @@ function go() {
 }
 
 function buildYearTabs() {
-  const yrs = ['all'];
-  localDramas.forEach(d=>{if(d.year&&!yrs.includes(d.year))yrs.push(d.year);});
-  yrs.sort((a,b)=>a==='all'?-1:b==='all'?1:b.localeCompare(a));
-  const wrap = document.getElementById('tabs'); wrap.innerHTML='';
-  yrs.forEach(y=>{
-    const t=document.createElement('div'); t.className='ytab'+(y===Y?' active':'');
-    t.textContent = y==='all'?'すべて':y+'年'; t.onclick=()=>{Y=y;buildYearTabs();render();};
-    wrap.appendChild(t);
-  });
+  // 年別タブは放送年フィルタードロップダウンに統合済み・この関数は互換性のため残す
+  const wrap = document.getElementById('tabs');
+  if (wrap) wrap.innerHTML = '';
 }
 
 // ── ドロップダウン選択肢を動的生成 ───────────────────────────────────
@@ -731,8 +722,8 @@ function card(d, listMode) {
   const upBadge      = isUp   ? `<span class="utag">予定</span>` : '';
 
   // ── モード別の追加表示 ────────────────────────────────────────────────
-  // 作品を探す：ユーザー平均評価
-  const userAvgHtml = (mode === 'search' && d.user_rate_avg)
+  // ユーザー平均評価（作品を探す・マイリストで表示）
+  const userAvgHtml = ((mode === 'search' || mode === 'mylist') && d.user_rate_avg)
     ? `<div class="user-avg-rate">👥 ★${d.user_rate_avg} <span class="urate-count">(${d.user_rate_count || 0}件)</span></div>`
     : '';
 
@@ -749,8 +740,9 @@ function card(d, listMode) {
     ? `<div class="crating"><div class="stars">${strs(d.recommend)}</div></div>`
     : '';
 
-  // ステータス変更セレクト（マイリストモード・ログイン時のみ）
-  const userBtns = (mode === 'mylist' && currentUser) ? `
+  // ステータス変更セレクト（マイリスト・Coryリストでログイン時に表示）
+  const showStatusSel = (mode === 'mylist' || mode === 'cory') && currentUser;
+  const userBtns = showStatusSel ? `
     <select class="status-sel"
       onchange="saveUserStatus('${id}', this.value)"
       onclick="event.stopPropagation()">
@@ -826,7 +818,6 @@ function render() {
     const sr = document.getElementById('statsRow');
     if(sr){sr.innerHTML=`<span class="stag">✓ 視聴済み ${wc}件</span>`;sr.style.display='flex';}
   }
-  buildYearTabs();
   buildFilterDropdowns();
   updateSidebarState();
   const g=document.getElementById('grid'), em=document.getElementById('empty');

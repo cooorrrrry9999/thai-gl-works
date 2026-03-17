@@ -1347,28 +1347,7 @@ function renderModal(id) {
   });
   if (links.length) b += `<div class="msec"><div class="mlab">🔗 リンク</div><div class="ext-links">${links.join('')}</div></div>`;
 
-  // ── モーダル内シェアボタン（アイコン+ポップアップ） ──────────────────
-  const shareUrl  = `${location.origin}${location.pathname}?drama=${encodeURIComponent(id)}`;
-  const shareText = `${d.title}${cp ? ' / ' + cp : ''} | Cory's GL Guide`;
-  const xUrl      = `https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
-  const lineUrl   = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(shareUrl)}`;
-  b += `<div class="modal-share-wrap" onclick="event.stopPropagation()">
-    <span class="share-label">📤 シェア</span>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <a href="${xUrl}" target="_blank" class="csm-item csm-x" style="border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:5px 12px">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-        X でシェア
-      </a>
-      <a href="${lineUrl}" target="_blank" class="csm-item csm-line" style="border:1px solid rgba(6,199,85,.3);border-radius:20px;padding:5px 12px">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
-        LINE でシェア
-      </a>
-      <button class="csm-item csm-copy" onclick="copyDramaLink('${shareUrl}')" style="border:1px solid rgba(155,126,200,.25);border-radius:20px;padding:5px 12px">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        リンクをコピー
-      </button>
-    </div>
-  </div>`;
+
 
   // ユーザーセクション
   if (currentUser) {
@@ -1902,10 +1881,7 @@ textarea:focus{border-color:var(--lav);}
 .csm-line:hover{background:rgba(6,199,85,.12);color:#06c755;}
 .csm-copy:hover{background:rgba(155,126,200,.15);color:var(--ll);}
 
-/* モーダル内シェアボタン */
-.modal-share-wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:10px 0;border-top:1px solid rgba(155,126,200,.1);margin-top:10px;}
-.share-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);flex-shrink:0;}
+
 
 .toast{position:fixed;bottom:24px;right:24px;z-index:9999;
   background:rgba(40,25,55,.95);border:1px solid rgba(155,126,200,.3);

@@ -32,7 +32,7 @@ let currentUser = null, isAdmin = false;
 let talents = [];   // Firestore talents コレクション（俳優1人=1件）
 let dramas  = [];   // Firestore dramas コレクション（出演作品連携用）
 let editingId = null;
-let searchQ = '', filterStudio = '';
+let searchQ = '';
 
 // ── Auth ───────────────────────────────────────────────────────────────
 window.loginWithGoogle = async () => {
@@ -126,7 +126,6 @@ function filtered() {
       (t.real_name || '').toLowerCase().includes(q)
     );
   }
-  if (filterStudio) l = l.filter(t => (t.studio || '') === filterStudio);
   return l;
 }
 
@@ -141,14 +140,7 @@ function render() {
     el.style.display = isAdmin ? '' : 'none';
   });
 
-  // 事務所フィルター選択肢
-  const studios = [...new Set(talents.map(t => t.studio || '').filter(Boolean))].sort();
-  const ss = document.getElementById('studioFilter');
-  if (ss) {
-    const cur = ss.value;
-    ss.innerHTML = '<option value="">すべての事務所</option>' +
-      studios.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
-  }
+
 
   const grid  = document.getElementById('talentGrid');
   const empty = document.getElementById('empty');
@@ -171,7 +163,7 @@ function render() {
       <div class="tcard-body">
         <div class="tcard-nickname">${t.nickname || '─'}</div>
         ${t.real_name ? `<div class="tcard-realname">${t.real_name}</div>` : ''}
-        ${t.studio    ? `<div class="tcard-studio">${t.studio}</div>`     : ''}
+
         ${age !== null ? `<div class="tcard-age">${age}歳</div>` : ''}
         ${appearances.length > 0
           ? `<div class="tcard-works">🎬 ${appearances.length}作品</div>
@@ -196,7 +188,7 @@ window.openDetail = id => {
   // 基本情報
   document.getElementById('detailNickname').textContent  = t.nickname  || '─';
   document.getElementById('detailRealname').textContent  = t.real_name || '─';
-  document.getElementById('detailStudio').textContent    = t.studio    || '─';
+
   document.getElementById('detailBirthday').textContent  =
     t.birthday ? `${formatBirthday(t.birthday)}${age !== null ? `（${age}歳）` : ''}` : '─';
 
@@ -286,7 +278,7 @@ window.closeForm = () => {
 };
 
 function resetForm() {
-  ['ft_nickname','ft_real_name','ft_birthday','ft_studio',
+  ['ft_nickname','ft_real_name','ft_birthday',
    'ft_image_url','ft_profile','ft_sns_x','ft_sns_ig'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -299,7 +291,7 @@ function fillForm(t) {
   set('ft_nickname',  t.nickname);
   set('ft_real_name', t.real_name);
   set('ft_birthday',  t.birthday);
-  set('ft_studio',    t.studio);
+
   set('ft_image_url', t.image_url);
   set('ft_profile',   t.profile);
   set('ft_sns_x',     t.sns_x);
@@ -326,7 +318,7 @@ window.submitForm = async () => {
     nickname,
     real_name: get('ft_real_name'),
     birthday:  get('ft_birthday'),   // "YYYY-MM-DD"
-    studio:    get('ft_studio'),
+
     image_url: get('ft_image_url'),
     profile:   get('ft_profile'),
     sns_x:     get('ft_sns_x'),
@@ -394,9 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('searchInput').addEventListener('input', e => {
     searchQ = e.target.value; render();
   });
-  document.getElementById('studioFilter').addEventListener('change', e => {
-    filterStudio = e.target.value; render();
-  });
+
   // 花びら
   const c = document.getElementById('petals');
   for (let i = 0; i < 18; i++) {
@@ -800,7 +790,7 @@ select option{background:var(--dark2);}
         <div class="srch">
           <input type="text" id="searchInput" placeholder="チューレン・本名で検索...">
         </div>
-        <select id="studioFilter"><option value="">すべての事務所</option></select>
+
         <div class="cnt" id="cnt">─ 名</div>
         <button class="add-btn admin-only" style="display:none" onclick="openAdd()">＋ タレントを追加</button>
       </div>
@@ -833,10 +823,7 @@ select option{background:var(--dark2);}
             <div class="pg-label">本名</div>
             <div class="pg-val" id="detailRealname"></div>
           </div>
-          <div class="pg-item">
-            <div class="pg-label">所属事務所</div>
-            <div class="pg-val" id="detailStudio"></div>
-          </div>
+  
           <div class="pg-item" style="grid-column:1/-1">
             <div class="pg-label">誕生日</div>
             <div class="pg-val" id="detailBirthday"></div>
@@ -884,10 +871,7 @@ select option{background:var(--dark2);}
             <input type="date" id="ft_birthday" oninput="updateAgePreview()">
             <div class="age-preview" id="agePreview"></div>
           </div>
-          <div class="form-group">
-            <label>所属事務所</label>
-            <input type="text" id="ft_studio" placeholder="例: GMMTV, IDF, GMM">
-          </div>
+
         </div>
       </div>
 

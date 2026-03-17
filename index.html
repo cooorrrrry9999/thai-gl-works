@@ -219,12 +219,32 @@ async function loadDramasFromDB() {
       arr.sort((a,b) => (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1);
       localDramas = arr;
     } else {
-      localDramas = []; // Firestoreが空の場合は空表示
+      localDramas = [];
     }
   } catch(e) {
-    localDramas = []; // オフライン時は空表示
+    localDramas = [];
   }
   render();
+  // ?drama=ID でアクセスした場合：全件ロード完了後にモーダルを開く
+  const _pid = new URLSearchParams(location.search).get('drama');
+  if (_pid && document.getElementById('ov') && !document.getElementById('ov').classList.contains('open')) {
+    openM(_pid);
+    // URLをクリーンに（ブラウザ履歴を汚さない）
+    history.replaceState(null, '', location.pathname);
+  }
+}
+
+// ?drama=ID のとき：1件だけ先行取得してモーダルを即座に開く（スマホ高速化）
+async function preloadDramaModal(dramaId) {
+  try {
+    const snap = await getDoc(doc(db, 'dramas', dramaId));
+    if (!snap.exists()) return;
+    const d = { _id: snap.id, ...snap.data() };
+    // localDramasにまだなければ先行追加
+    if (!localDramas.find(x => x._id === dramaId)) localDramas.unshift(d);
+    openM(dramaId);
+    history.replaceState(null, '', location.pathname);
+  } catch(e) { /* 失敗しても全件ロード完了後に開く */ }
 }
 // ── TALENT DATA（CP選択肢 & 詳細モーダルリンク用） ─────────────────────
 let localTalents = [];
@@ -881,14 +901,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 600);
   }
 
-  // index.html?drama=XXX で作品モーダルを直接開く（talents.htmlからのリンク用）
+  // index.html?drama=XXX で作品モーダルを直接開く
+  // スマホ高速化：1件だけ先行取得してモーダルを即座に開く
   const params = new URLSearchParams(window.location.search);
   const dramaId = params.get('drama');
-  if (dramaId) {
-    setTimeout(() => {
-      if (typeof window.openM === 'function') window.openM(dramaId);
-    }, 800);
-  }
+  if (dramaId) preloadDramaModal(dramaId);
 });
 
 function go() {

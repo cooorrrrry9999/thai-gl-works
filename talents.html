@@ -67,6 +67,10 @@ async function loadAll() {
     ds.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
   } catch(e) { talents = []; dramas = []; }
   showLoading(false);
+  // 認証状態が確定していればadmin-only要素も更新
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
   render();
   // index.htmlからのタレントリンク経由で直接開く
   const openId = sessionStorage.getItem('openTalent');
@@ -132,6 +136,10 @@ function render() {
   if (cntEl) cntEl.textContent = list.length + ' 名';
   const totalEl = document.getElementById('sTotal');
   if (totalEl) totalEl.textContent = talents.length;
+  // 認証状態に合わせてadmin-only要素を毎回更新
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
 
   // 事務所フィルター選択肢
   const studios = [...new Set(talents.map(t => t.studio || '').filter(Boolean))].sort();

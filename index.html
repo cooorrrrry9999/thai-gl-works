@@ -1347,7 +1347,21 @@ function renderModal(id) {
   });
   if (links.length) b += `<div class="msec"><div class="mlab">🔗 リンク</div><div class="ext-links">${links.join('')}</div></div>`;
 
-
+  // ── モーダル内シェアボタン ─────────────────────────────────────────────
+  const mShareUrl  = `${location.origin}${location.pathname}?drama=${encodeURIComponent(id)}`;
+  const mShareText = encodeURIComponent(`${d.title}${cp ? ' / ' + cp : ''} | Cory's GL Guide\n`);
+  const mXUrl      = `https://x.com/intent/tweet?text=${mShareText}&url=${encodeURIComponent(mShareUrl)}`;
+  b += `<div class="modal-share-row">
+    <span class="modal-share-label">📤 シェア</span>
+    <a href="${mXUrl}" target="_blank" class="modal-share-btn msbtn-x" onclick="event.stopPropagation()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      X でシェア
+    </a>
+    <button class="modal-share-btn msbtn-copy" onclick="event.stopPropagation();copyDramaLink('${mShareUrl}')">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      リンクをコピー
+    </button>
+  </div>`;
 
   // ユーザーセクション
   if (currentUser) {
@@ -1849,6 +1863,19 @@ textarea:focus{border-color:var(--lav);}
   padding:4px 10px;color:rgba(155,126,200,.5);cursor:pointer;font-size:11px;
   font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
 .reset-btn:hover{border-color:rgba(155,126,200,.4);color:var(--muted);}
+
+/* モーダル内シェアボタン */
+.modal-share-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 0;border-top:1px solid rgba(155,126,200,.1);margin-top:4px;}
+.modal-share-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--muted);flex-shrink:0;}
+.modal-share-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;
+  border-radius:20px;font-size:12px;text-decoration:none;cursor:pointer;
+  font-family:'Noto Sans JP',sans-serif;transition:all .2s;white-space:nowrap;}
+.msbtn-x{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.15);color:#fff;}
+.msbtn-x:hover{background:rgba(0,0,0,.7);}
+.msbtn-copy{background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.25);color:var(--ll);}
+.msbtn-copy:hover{background:rgba(155,126,200,.22);}
 
 /* カード シェアアイコン＋ポップアップメニュー */
 .card-share-wrap{position:relative;display:inline-flex;align-items:center;}

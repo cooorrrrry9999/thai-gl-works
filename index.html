@@ -379,14 +379,15 @@ function resetAdminForm() {
   renderPlatformRows();
   cpRows = [];
   renderCpRows();
-  renderUrlArrayField('pilot_urls', []);
-  renderUrlArrayField('ost_urls', []);
+  renderTitleUrlRows('pilot', []);
+  renderTitleUrlRows('ost', []);
 }
 
 function fillAdminForm(d) {
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
   // 基本情報
   set('af_title', d.title);
+  set('af_image_url', d.image_url || '');
   // release_start: 旧releaseフィールドから移行
   set('af_release_start', d.release_start || (d.release && d.release !== '未定' ? d.release + (d.release.length===7?'-01':'') : ''));
   set('af_release_end', d.release_end || '');
@@ -434,9 +435,16 @@ function fillAdminForm(d) {
     }
   }
   renderPlatformRows();
-  // URL配列
-  renderUrlArrayField('pilot_urls', d.pilot_urls || (d.notes && d.notes.includes('Pilot') ? [] : []));
-  renderUrlArrayField('ost_urls', d.ost_urls || []);
+  // Pilot：新形式(pilots [{title,url}]) → なければ旧pilot_urlsから変換
+  const pilotsData = d.pilots && d.pilots.length
+    ? d.pilots
+    : (d.pilot_urls || []).map(u => ({ title: '', url: u }));
+  renderTitleUrlRows('pilot', pilotsData);
+  // OST：新形式(osts [{title,url}]) → なければ旧ost_urlsから変換
+  const ostsData = d.osts && d.osts.length
+    ? d.osts
+    : (d.ost_urls || []).map(u => ({ title: '', url: u }));
+  renderTitleUrlRows('ost', ostsData);
   set('af_mdl_url', d.mdl_url);
   set('af_sns_x', d.sns_x);
   set('af_sns_ig', d.sns_ig);
@@ -501,36 +509,37 @@ window.cpSet = (i, key, val) => { cpRows[i][key] = val; };
 window.cpDel = (i) => { cpRows.splice(i,1); renderCpRows(); };
 window.cpAdd = () => { cpRows.push({top:'',bottom:'',ship_name:'',note:''}); renderCpRows(); };
 
-function renderUrlArrayField(fieldId, urls) {
+// ── タイトル + URL 汎用入力行（Pilot / OST 共通） ───────────────────────
+// rows は { title, url }[] の配列。fieldId は 'pilot' or 'ost'
+const _tuRows = { pilot: [], ost: [] };
+
+function renderTitleUrlRows(fieldId, data) {
+  _tuRows[fieldId] = data && data.length ? data.map(o => ({...o})) : [{ title: '', url: '' }];
+  _drawTitleUrlRows(fieldId);
+}
+
+function _drawTitleUrlRows(fieldId) {
   const wrap = document.getElementById(fieldId + '_rows');
   if (!wrap) return;
-  const arr = urls && urls.length ? urls : [''];
-  wrap.innerHTML = arr.map((url, i) => `
-    <div class="url-row">
-      <input type="url" value="${url||''}" placeholder="https://youtube.com/..."
-        oninput="urlArrSet('${fieldId}',${i},this.value)">
-      <button type="button" class="plat-del" onclick="urlArrDel('${fieldId}',${i})">✕</button>
+  const isPilot = fieldId === 'pilot';
+  wrap.innerHTML = _tuRows[fieldId].map((row, i) => `
+    <div class="url-row" style="flex-wrap:wrap;gap:5px">
+      <input type="text" value="${(row.title||'').replace(/"/g,'&quot;')}"
+        placeholder="${isPilot ? 'タイトル（例: Pilot EP1）' : '曲タイトル（例: Because of You）'}"
+        oninput="tuSet('${fieldId}',${i},'title',this.value)"
+        style="flex:1;min-width:130px;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-family:'Noto Sans JP',sans-serif;outline:none">
+      <input type="url" value="${(row.url||'').replace(/"/g,'&quot;')}"
+        placeholder="https://youtube.com/..."
+        oninput="tuSet('${fieldId}',${i},'url',this.value)"
+        style="flex:2;min-width:170px;background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:6px 10px;color:var(--text);font-size:13px;font-family:'Noto Sans JP',sans-serif;outline:none">
+      <button type="button" class="plat-del" onclick="tuDel('${fieldId}',${i})">✕</button>
     </div>
   `).join('');
-  wrap._data = [...arr];
 }
-window.urlArrSet = (fieldId, i, val) => {
-  const wrap = document.getElementById(fieldId + '_rows');
-  if (!wrap._data) wrap._data = [];
-  wrap._data[i] = val;
-};
-window.urlArrDel = (fieldId, i) => {
-  const wrap = document.getElementById(fieldId + '_rows');
-  if (!wrap._data) return;
-  wrap._data.splice(i,1);
-  renderUrlArrayField(fieldId, wrap._data);
-};
-window.urlArrAdd = (fieldId) => {
-  const wrap = document.getElementById(fieldId + '_rows');
-  const arr = wrap._data || [];
-  arr.push('');
-  renderUrlArrayField(fieldId, arr);
-};
+
+window.tuSet = (fieldId, i, key, val) => { _tuRows[fieldId][i][key] = val; };
+window.tuDel = (fieldId, i) => { _tuRows[fieldId].splice(i, 1); _drawTitleUrlRows(fieldId); };
+window.tuAdd = (fieldId) => { _tuRows[fieldId].push({ title: '', url: '' }); _drawTitleUrlRows(fieldId); };
 
 window.toggleOriginalFields = function() {
   const has = document.getElementById('af_has_original').checked;
@@ -572,9 +581,14 @@ window.submitAdminForm = async () => {
     mdl_url:        get('mdl_url'),
     sns_x:          get('sns_x'),
     sns_ig:         get('sns_ig'),
+    image_url:      get('image_url'),
     platforms:      platformRows.filter(r => r.platform),
-    pilot_urls:     (document.getElementById('pilot_urls_rows')?._data || []).filter(Boolean),
-    ost_urls:       (document.getElementById('ost_urls_rows')?._data || []).filter(Boolean),
+    // 新形式：タイトル+URLのオブジェクト配列
+    pilots:         _tuRows['pilot'].filter(r => r.url),
+    osts:           _tuRows['ost'].filter(r => r.url),
+    // 後方互換：旧フィールドもURLのみで書き出し
+    pilot_urls:     _tuRows['pilot'].filter(r => r.url).map(r => r.url),
+    ost_urls:       _tuRows['ost'].filter(r => r.url).map(r => r.url),
     updatedAt:      serverTimestamp(),
   };
   // 自動計算
@@ -614,6 +628,8 @@ window.deleteDrama = async (id, e) => {
     await loadDramasFromDB();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
 };
+
+// データ移行スクリプトは削除済み（Firestoreに移行完了）
 
 // ── module → 通常script へのブリッジ ─────────────────────────────────
 // 通常scriptから呼べるようwindowに登録
@@ -850,11 +866,10 @@ function buildFilterDropdowns() {
   // 放送年リスト
   const years = [...new Set(localDramas.map(d=>d.year||'未定'))].sort((a,b)=>b.localeCompare(a));
 
-  const filterMap = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
   const makeItems = (type, items) => items.map(v => `
     <label class="dd-item">
       <input type="checkbox" value="${v}"
-        ${(filterMap[type]||[]).includes(v)?'checked':''}
+        ${(type==='plt'?FILTER_PLT:type==='status'?FILTER_STATUS:type==='studio'?FILTER_STUDIO:FILTER_YEAR).includes(v)?'checked':''}
         onchange="onFilterChange('${type}','${v}',this.checked)">
       <span>${v}</span>
     </label>`).join('');
@@ -1034,7 +1049,9 @@ function card(d, listMode) {
   // ── グリッドモード ────────────────────────────────────────────────────
   return `
     <div class="${cls}" onclick="openM('${id}')">
-      <div class="card-top"></div>
+      ${d.image_url
+        ? `<div class="card-img"><img src="${d.image_url}" alt="${d.title}" loading="lazy" onerror="this.parentElement.outerHTML='<div class=card-top></div>'"></div>`
+        : `<div class="card-top"></div>`}
       <div class="cbody">
         <div class="cheader">
           <div class="ctitle">${d.title}${upBadge}${subBadge}${watchedBadge}</div>
@@ -1098,6 +1115,8 @@ function renderModal(id) {
   const status = calcStatus(d);
   document.getElementById('mt').textContent = d.title;
   document.getElementById('mc').textContent = cp ? '👩‍❤️‍👩 ' + cp : '';
+  const mimg = document.getElementById('modal-img');
+  if (mimg) { mimg.src = d.image_url||''; mimg.style.display = d.image_url ? 'block' : 'none'; }
   let b = '';
   // CP一覧（複数ある場合はテーブル表示）
   if (cpList.length > 1) {
@@ -1152,8 +1171,18 @@ function renderModal(id) {
   if (d.mdl_url) links.push(`<a href="${d.mdl_url}" target="_blank" class="ext-link">📋 MyDramaList</a>`);
   if (d.sns_x) links.push(`<a href="${d.sns_x}" target="_blank" class="ext-link">𝕏 Twitter</a>`);
   if (d.sns_ig) links.push(`<a href="${d.sns_ig}" target="_blank" class="ext-link">📸 Instagram</a>`);
-  if (d.pilot_urls && d.pilot_urls.length) d.pilot_urls.forEach((u,i) => links.push(`<a href="${u}" target="_blank" class="ext-link">▶ Pilot${d.pilot_urls.length>1?'('+(i+1)+')':''}</a>`));
-  if (d.ost_urls && d.ost_urls.length) d.ost_urls.forEach((u,i) => links.push(`<a href="${u}" target="_blank" class="ext-link">🎵 OST${d.ost_urls.length>1?'('+(i+1)+')':''}</a>`));
+  // Pilot：新形式(pilots) → なければ旧pilot_urlsから
+  const pilotList = (d.pilots && d.pilots.length) ? d.pilots : (d.pilot_urls||[]).map(u=>({title:'',url:u}));
+  pilotList.filter(o=>o.url).forEach((o,i) => {
+    const label = o.title ? `▶ ${o.title}` : `▶ Pilot${pilotList.length>1?'('+(i+1)+')':''}`;
+    links.push(`<a href="${o.url}" target="_blank" class="ext-link">${label}</a>`);
+  });
+  // OST：新形式(osts) → なければ旧ost_urlsから
+  const ostList = (d.osts && d.osts.length) ? d.osts : (d.ost_urls||[]).map(u=>({title:'',url:u}));
+  ostList.filter(o=>o.url).forEach((o,i) => {
+    const label = o.title ? `🎵 ${o.title}` : `🎵 OST${ostList.length>1?'('+(i+1)+')':''}`;
+    links.push(`<a href="${o.url}" target="_blank" class="ext-link">${label}</a>`);
+  });
   if (links.length) b += `<div class="msec"><div class="mlab">🔗 リンク</div><div class="ext-links">${links.join('')}</div></div>`;
   // ユーザーセクション
   if (currentUser) {
@@ -1343,6 +1372,9 @@ select option{background:var(--dark2);}
 .card.is-watched{border-color:rgba(92,184,133,.3);}
 .card.is-watched .card-top{background:linear-gradient(90deg,#5cb885,#3da86a);}
 .card-top{height:3px;background:linear-gradient(90deg,var(--rose),var(--lav));}
+.card-img{height:140px;overflow:hidden;position:relative;}
+.card-img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s;}
+.card:hover .card-img img{transform:scale(1.04);}
 .card.upcoming .card-top{background:linear-gradient(90deg,var(--lav),rgba(155,126,200,.3));}
 .card.no-info .card-top{background:linear-gradient(90deg,rgba(155,126,200,.3),rgba(155,126,200,.15));}
 .cbody{padding:12px 14px;}
@@ -1925,6 +1957,11 @@ textarea:focus{border-color:var(--lav);}
         <span class="sb-icon si-gold">＋</span>
         <span>作品を追加</span>
       </button>
+      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
+        <span class="sb-icon si-gold">⬆</span>
+        <span>データ移行</span>
+        <span class="sb-badge b-gold">管理者</span>
+      </button>
 
       <hr class="sb-divider">
 
@@ -2067,6 +2104,7 @@ textarea:focus{border-color:var(--lav);}
   <div class="modal">
     <div class="mhead">
       <button class="mclose" onclick="closeMD()">✕</button>
+      <img id="modal-img" src="" alt="" style="display:none;width:100%;max-height:200px;object-fit:cover;border-radius:8px;margin-bottom:10px;margin-top:4px">
       <div class="mtitle" id="mt"></div>
       <div class="mcp" id="mc"></div>
     </div>
@@ -2089,6 +2127,10 @@ textarea:focus{border-color:var(--lav);}
         <div class="am-section-title">📋 基本情報</div>
         <div class="form-grid">
           <div class="form-group full"><label>タイトル *</label><input type="text" id="af_title"></div>
+          <div class="form-group full">
+            <label>作品イメージ画像URL</label>
+            <input type="url" id="af_image_url" placeholder="https://example.com/image.jpg（横長推奨）">
+          </div>
           <div class="form-group">
             <label>放送開始日</label>
             <input type="text" id="af_release_start" placeholder="2025-08-22　月のみ: 2025-08-01　未定: 未定">
@@ -2205,14 +2247,16 @@ textarea:focus{border-color:var(--lav);}
           <div class="form-group"><label>公式 Instagram URL</label><input type="url" id="af_sns_ig" placeholder="https://instagram.com/..."></div>
         </div>
         <div style="margin-top:10px">
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Pilot URL（複数可）</div>
-          <div id="pilot_urls_rows"></div>
-          <button type="button" class="plat-add-btn" onclick="urlArrAdd('pilot_urls')">＋ Pilot URLを追加</button>
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Pilot（タイトル + URL）</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">タイトルを入力するとリンクにその名前が表示されます</div>
+          <div id="pilot_rows"></div>
+          <button type="button" class="plat-add-btn" onclick="tuAdd('pilot')">＋ Pilotを追加</button>
         </div>
-        <div style="margin-top:10px">
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">OST URL（複数可）</div>
-          <div id="ost_urls_rows"></div>
-          <button type="button" class="plat-add-btn" onclick="urlArrAdd('ost_urls')">＋ OST URLを追加</button>
+        <div style="margin-top:12px">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">OST（曲タイトル + URL）</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">曲タイトルを入力するとリンクにそのタイトルが表示されます</div>
+          <div id="ost_rows"></div>
+          <button type="button" class="plat-add-btn" onclick="tuAdd('ost')">＋ OSTを追加</button>
         </div>
       </div>
 

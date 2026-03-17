@@ -1359,16 +1359,17 @@ select option{background:var(--dark2);}
 .grid.list{grid-template-columns:1fr;}
 
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
-  overflow:hidden;transition:transform .2s,box-shadow .2s,border-color .2s;cursor:pointer;position:relative;}
+  overflow:hidden;transition:transform .2s,box-shadow .2s,border-color .2s;cursor:pointer;position:relative;min-width:0;}
 .card:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 1px rgba(232,84,122,.3);border-color:rgba(232,84,122,.4);}
 .card.is-watched{border-color:rgba(92,184,133,.3);}
 .card.is-watched .card-top{background:linear-gradient(90deg,#5cb885,#3da86a);}
 .card-top{height:3px;background:linear-gradient(90deg,var(--rose),var(--lav));}
 .card-img{
   width:100%;
-  aspect-ratio: 2/3;   /* 縦長ポスター比率 */
+  aspect-ratio: 2/3;
   overflow:hidden;
   position:relative;
+  display:block;
 }
 .card-img img{
   width:100%;
@@ -1651,9 +1652,20 @@ textarea:focus{border-color:var(--lav);}
 ::-webkit-scrollbar{width:6px;}
 ::-webkit-scrollbar-thumb{background:rgba(155,126,200,.3);border-radius:3px;}
 @media(max-width:600px){
-  .hero h1{font-size:1.6rem;}.ctrl-row{gap:5px;}.mgrid{grid-template-columns:1fr;}
-  .grid{grid-template-columns:1fr;}.update-note,.auth-bar #userName{display:none;}
-  .form-grid{grid-template-columns:1fr;}.plat-row{flex-direction:column;align-items:stretch;}
+  .hero h1{font-size:1.6rem;}
+  .ctrl-row{gap:5px;flex-wrap:wrap;}
+  .mgrid{grid-template-columns:1fr;}
+  /* スマホ: 2列グリッド（リストモード以外） */
+  .grid:not(.list){grid-template-columns:repeat(2,1fr);gap:8px;}
+  .gwrap{padding:10px 8px;}
+  #srt{font-size:11px;padding:5px 6px;max-width:130px;}
+  .srch{min-width:100px;}
+  .update-note,.auth-bar #userName{display:none;}
+  .form-grid{grid-template-columns:1fr;}
+  .plat-row{flex-direction:column;align-items:stretch;}
+  .ctitle{font-size:12.5px;}
+  .csyno{-webkit-line-clamp:2;}
+  .cbody{padding:8px 10px;}
 }
 
 /* ============================================================

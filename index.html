@@ -615,8 +615,6 @@ window.deleteDrama = async (id, e) => {
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
 };
 
-// データ移行スクリプトは削除済み（Firestoreに移行完了）
-
 // ── module → 通常script へのブリッジ ─────────────────────────────────
 // 通常scriptから呼べるようwindowに登録
 // （render, renderFilterTags, updateFilterBtnLabel, buildFilterDropdowns）
@@ -852,10 +850,11 @@ function buildFilterDropdowns() {
   // 放送年リスト
   const years = [...new Set(localDramas.map(d=>d.year||'未定'))].sort((a,b)=>b.localeCompare(a));
 
+  const filterMap = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
   const makeItems = (type, items) => items.map(v => `
     <label class="dd-item">
       <input type="checkbox" value="${v}"
-        ${(type==='plt'?FILTER_PLT:type==='status'?FILTER_STATUS:type==='studio'?FILTER_STUDIO:FILTER_YEAR).includes(v)?'checked':''}
+        ${(filterMap[type]||[]).includes(v)?'checked':''}
         onchange="onFilterChange('${type}','${v}',this.checked)">
       <span>${v}</span>
     </label>`).join('');
@@ -1925,11 +1924,6 @@ textarea:focus{border-color:var(--lav);}
       <button class="sb-item admin-only" id="sb-admin-add" style="display:none" onclick="openAdminAdd()">
         <span class="sb-icon si-gold">＋</span>
         <span>作品を追加</span>
-      </button>
-      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
-        <span class="sb-icon si-gold">⬆</span>
-        <span>データ移行</span>
-        <span class="sb-badge b-gold">管理者</span>
       </button>
 
       <hr class="sb-divider">

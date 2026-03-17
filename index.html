@@ -1139,18 +1139,30 @@ function card(d, listMode) {
          onclick="openAdminEdit('${id}', event)" title="編集">✏</button>`
     : '';
 
-  // ── カードホバーシェアボタン ──────────────────────────────────────────
+  // ── カードシェアボタン（右下・クリックでポップアップ） ──────────────
   const shareUrl  = `${location.origin}${location.pathname}?drama=${encodeURIComponent(id)}`;
   const shareTxtX = encodeURIComponent(`${d.title}${cp ? ' / ' + cp : ''} | Cory's GL Guide\n`);
   const xShareUrl = `https://x.com/intent/tweet?text=${shareTxtX}&url=${encodeURIComponent(shareUrl)}`;
+  const lineShareUrl = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(shareUrl)}`;
   const cardShareBtns = `
-    <div class="card-share" onclick="event.stopPropagation()">
-      <a href="${xShareUrl}" target="_blank" class="card-share-btn card-share-x" title="Xでシェア">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-      </a>
-      <button class="card-share-btn card-share-copy" onclick="copyDramaLink('${shareUrl}')" title="リンクをコピー">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    <div class="card-share-wrap" onclick="event.stopPropagation()">
+      <button class="card-share-icon" onclick="toggleShareMenu('${id}',event)" title="シェア">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       </button>
+      <div class="card-share-menu" id="smenu-${id}">
+        <a href="${xShareUrl}" target="_blank" class="csm-item csm-x">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          X
+        </a>
+        <a href="${lineShareUrl}" target="_blank" class="csm-item csm-line">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.630 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.630 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+          LINE
+        </a>
+        <button class="csm-item csm-copy" onclick="copyDramaLink('${shareUrl}')">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          コピー
+        </button>
+      </div>
     </div>`;
 
   // ── リストモード ──────────────────────────────────────────────────────
@@ -1160,7 +1172,6 @@ function card(d, listMode) {
         ${d.image_url
           ? `<img class="list-thumb" src="${d.image_url}" alt="${d.title}" loading="lazy" onerror="this.outerHTML='<div class=card-top style=width:3px></div>'">`
           : `<div class="card-top"></div>`}
-        ${cardShareBtns}
         <div class="cbody list-body">
           <div class="cleft">
             <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
@@ -1175,7 +1186,7 @@ function card(d, listMode) {
             ${coryRateHtml}
             ${userAvgHtml}
             ${myRateHtml}
-            <div class="card-btns">${userBtns}${adminBtns}</div>
+            <div class="card-btns">${userBtns}${adminBtns}${cardShareBtns}</div>
           </div>
         </div>
       </div>`;
@@ -1184,7 +1195,6 @@ function card(d, listMode) {
   // ── グリッドモード ────────────────────────────────────────────────────
   return `
     <div class="${cls}" onclick="openM('${id}')">
-      ${cardShareBtns}
       ${d.image_url
         ? `<div class="card-img"><img src="${d.image_url}" alt="${d.title}" loading="lazy" onerror="this.parentElement.outerHTML='<div class=card-top></div>'"></div>`
         : `<div class="card-top"></div>`}
@@ -1399,6 +1409,21 @@ function getChipClass(name) {
   if(/telasa/i.test(name))return'ctl';if(/gaga/i.test(name))return'cgg';
   if(/rakuten|楽天/i.test(name))return'crk';return'cot';
 }
+
+// シェアメニューの開閉
+window.toggleShareMenu = (id, e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('smenu-' + id);
+  if (!menu) return;
+  const isOpen = menu.classList.contains('open');
+  // 他の開いているメニューを全部閉じる
+  document.querySelectorAll('.card-share-menu.open').forEach(m => m.classList.remove('open'));
+  if (!isOpen) menu.classList.add('open');
+};
+// カード外クリックでメニューを閉じる
+document.addEventListener('click', () => {
+  document.querySelectorAll('.card-share-menu.open').forEach(m => m.classList.remove('open'));
+});
 
 window.copyDramaLink = async (url) => {
   try {
@@ -1844,32 +1869,36 @@ textarea:focus{border-color:var(--lav);}
   font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
 .reset-btn:hover{border-color:rgba(155,126,200,.4);color:var(--muted);}
 
-/* カードホバー シェアボタン */
-.card-share{
-  position:absolute;top:8px;right:8px;
-  display:flex;gap:4px;
-  opacity:0;transition:opacity .2s;
-  z-index:10;
-}
-.card:hover .card-share{opacity:1;}
-.card-share-btn{
-  width:28px;height:28px;border-radius:7px;
+/* カード シェアアイコン＋ポップアップメニュー */
+.card-share-wrap{position:relative;display:inline-flex;align-items:center;}
+.card-share-icon{
+  width:26px;height:26px;border-radius:6px;
   display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:all .15s;
-  border:1px solid rgba(255,255,255,.15);
-  backdrop-filter:blur(6px);
-  text-decoration:none;
+  background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  color:var(--muted);cursor:pointer;transition:all .2s;
+  font-family:inherit;
 }
-.card-share-x{
-  background:rgba(0,0,0,.55);
-  color:#fff;
+.card-share-icon:hover{background:rgba(155,126,200,.2);color:var(--ll);}
+.card-share-menu{
+  position:absolute;bottom:calc(100% + 6px);right:0;
+  background:#1e1430;border:1px solid rgba(155,126,200,.3);
+  border-radius:10px;padding:5px;
+  display:none;flex-direction:column;gap:2px;
+  min-width:100px;z-index:200;
+  box-shadow:0 8px 24px rgba(0,0,0,.6);
 }
-.card-share-x:hover{background:rgba(0,0,0,.85);}
-.card-share-copy{
-  background:rgba(155,126,200,.35);
-  color:var(--ll);
+.card-share-menu.open{display:flex;}
+.csm-item{
+  display:flex;align-items:center;gap:7px;padding:6px 10px;
+  border-radius:7px;font-size:12px;text-decoration:none;cursor:pointer;
+  font-family:'Noto Sans JP',sans-serif;border:none;background:none;
+  color:var(--muted);transition:background .15s,color .15s;
+  white-space:nowrap;text-align:left;
 }
-.card-share-copy:hover{background:rgba(155,126,200,.6);}
+.csm-item:hover{background:rgba(155,126,200,.12);color:var(--text);}
+.csm-x:hover{background:rgba(0,0,0,.3);color:#fff;}
+.csm-line:hover{background:rgba(6,199,85,.12);color:#06c755;}
+.csm-copy:hover{background:rgba(155,126,200,.15);color:var(--ll);}
 
 /* シェアボタン */
 .share-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;

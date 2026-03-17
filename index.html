@@ -435,15 +435,13 @@ function fillAdminForm(d) {
     }
   }
   renderPlatformRows();
-  // Pilot：新形式(pilots [{title,url}]) → なければ旧pilot_urlsから変換
+  // Pilot：新形式(pilots) → なければ旧pilot_urlsから変換
   const pilotsData = d.pilots && d.pilots.length
-    ? d.pilots
-    : (d.pilot_urls || []).map(u => ({ title: '', url: u }));
+    ? d.pilots : (d.pilot_urls||[]).map(u=>({title:'',url:u}));
   renderTitleUrlRows('pilot', pilotsData);
-  // OST：新形式(osts [{title,url}]) → なければ旧ost_urlsから変換
+  // OST：新形式(osts) → なければ旧ost_urlsから変換
   const ostsData = d.osts && d.osts.length
-    ? d.osts
-    : (d.ost_urls || []).map(u => ({ title: '', url: u }));
+    ? d.osts : (d.ost_urls||[]).map(u=>({title:'',url:u}));
   renderTitleUrlRows('ost', ostsData);
   set('af_mdl_url', d.mdl_url);
   set('af_sns_x', d.sns_x);
@@ -510,14 +508,11 @@ window.cpDel = (i) => { cpRows.splice(i,1); renderCpRows(); };
 window.cpAdd = () => { cpRows.push({top:'',bottom:'',ship_name:'',note:''}); renderCpRows(); };
 
 // ── タイトル + URL 汎用入力行（Pilot / OST 共通） ───────────────────────
-// rows は { title, url }[] の配列。fieldId は 'pilot' or 'ost'
 const _tuRows = { pilot: [], ost: [] };
-
 function renderTitleUrlRows(fieldId, data) {
-  _tuRows[fieldId] = data && data.length ? data.map(o => ({...o})) : [{ title: '', url: '' }];
+  _tuRows[fieldId] = data && data.length ? data.map(o=>({...o})) : [{title:'',url:''}];
   _drawTitleUrlRows(fieldId);
 }
-
 function _drawTitleUrlRows(fieldId) {
   const wrap = document.getElementById(fieldId + '_rows');
   if (!wrap) return;
@@ -536,10 +531,9 @@ function _drawTitleUrlRows(fieldId) {
     </div>
   `).join('');
 }
-
 window.tuSet = (fieldId, i, key, val) => { _tuRows[fieldId][i][key] = val; };
-window.tuDel = (fieldId, i) => { _tuRows[fieldId].splice(i, 1); _drawTitleUrlRows(fieldId); };
-window.tuAdd = (fieldId) => { _tuRows[fieldId].push({ title: '', url: '' }); _drawTitleUrlRows(fieldId); };
+window.tuDel = (fieldId, i) => { _tuRows[fieldId].splice(i,1); _drawTitleUrlRows(fieldId); };
+window.tuAdd = (fieldId) => { _tuRows[fieldId].push({title:'',url:''}); _drawTitleUrlRows(fieldId); };
 
 window.toggleOriginalFields = function() {
   const has = document.getElementById('af_has_original').checked;
@@ -583,10 +577,8 @@ window.submitAdminForm = async () => {
     sns_ig:         get('sns_ig'),
     image_url:      get('image_url'),
     platforms:      platformRows.filter(r => r.platform),
-    // 新形式：タイトル+URLのオブジェクト配列
     pilots:         _tuRows['pilot'].filter(r => r.url),
     osts:           _tuRows['ost'].filter(r => r.url),
-    // 後方互換：旧フィールドもURLのみで書き出し
     pilot_urls:     _tuRows['pilot'].filter(r => r.url).map(r => r.url),
     ost_urls:       _tuRows['ost'].filter(r => r.url).map(r => r.url),
     updatedAt:      serverTimestamp(),
@@ -1024,8 +1016,10 @@ function card(d, listMode) {
   // ── リストモード ──────────────────────────────────────────────────────
   if (listMode) {
     return `
-      <div class="${cls}" onclick="openM('${id}')">
-        <div class="card-top"></div>
+      <div class="${cls}${d.image_url ? ' has-img' : ''}" onclick="openM('${id}')">
+        ${d.image_url
+          ? `<img class="list-thumb" src="${d.image_url}" alt="${d.title}" loading="lazy" onerror="this.outerHTML='<div class=card-top style=width:3px></div>'">`
+          : `<div class="card-top"></div>`}
         <div class="cbody list-body">
           <div class="cleft">
             <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
@@ -1171,13 +1165,11 @@ function renderModal(id) {
   if (d.mdl_url) links.push(`<a href="${d.mdl_url}" target="_blank" class="ext-link">📋 MyDramaList</a>`);
   if (d.sns_x) links.push(`<a href="${d.sns_x}" target="_blank" class="ext-link">𝕏 Twitter</a>`);
   if (d.sns_ig) links.push(`<a href="${d.sns_ig}" target="_blank" class="ext-link">📸 Instagram</a>`);
-  // Pilot：新形式(pilots) → なければ旧pilot_urlsから
   const pilotList = (d.pilots && d.pilots.length) ? d.pilots : (d.pilot_urls||[]).map(u=>({title:'',url:u}));
   pilotList.filter(o=>o.url).forEach((o,i) => {
     const label = o.title ? `▶ ${o.title}` : `▶ Pilot${pilotList.length>1?'('+(i+1)+')':''}`;
     links.push(`<a href="${o.url}" target="_blank" class="ext-link">${label}</a>`);
   });
-  // OST：新形式(osts) → なければ旧ost_urlsから
   const ostList = (d.osts && d.osts.length) ? d.osts : (d.ost_urls||[]).map(u=>({title:'',url:u}));
   ostList.filter(o=>o.url).forEach((o,i) => {
     const label = o.title ? `🎵 ${o.title}` : `🎵 OST${ostList.length>1?'('+(i+1)+')':''}`;
@@ -1372,9 +1364,27 @@ select option{background:var(--dark2);}
 .card.is-watched{border-color:rgba(92,184,133,.3);}
 .card.is-watched .card-top{background:linear-gradient(90deg,#5cb885,#3da86a);}
 .card-top{height:3px;background:linear-gradient(90deg,var(--rose),var(--lav));}
-.card-img{height:140px;overflow:hidden;position:relative;}
-.card-img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s;}
+.card-img{
+  width:100%;
+  aspect-ratio: 2/3;   /* 縦長ポスター比率 */
+  overflow:hidden;
+  position:relative;
+}
+.card-img img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position: center top;  /* 上寄せで顔が切れにくい */
+  display:block;
+  transition:transform .35s;
+}
 .card:hover .card-img img{transform:scale(1.04);}
+/* リストモードでは画像を小さめに */
+.grid.list .card-img{
+  width:60px;
+  aspect-ratio: 2/3;
+  flex-shrink:0;
+}
 .card.upcoming .card-top{background:linear-gradient(90deg,var(--lav),rgba(155,126,200,.3));}
 .card.no-info .card-top{background:linear-gradient(90deg,rgba(155,126,200,.3),rgba(155,126,200,.15));}
 .cbody{padding:12px 14px;}
@@ -1441,7 +1451,9 @@ select option{background:var(--dark2);}
   border-radius:6px;padding:3px 6px;color:var(--muted);font-size:11px;cursor:pointer;
   font-family:'Noto Sans JP',sans-serif;}
 .grid.list .card{display:grid;grid-template-columns:3px 1fr;}
+.grid.list .card.has-img{grid-template-columns:56px 1fr;}
 .grid.list .card-top{width:3px;height:auto;background:linear-gradient(180deg,var(--rose),var(--lav));}
+.list-thumb{width:56px;height:100%;object-fit:cover;object-position:center top;display:block;flex-shrink:0;}
 .grid.list .cbody{display:grid;grid-template-columns:1fr auto;gap:7px;padding:10px 14px;}
 .grid.list .cleft{min-width:0;}
 .grid.list .cright{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
@@ -2104,9 +2116,14 @@ textarea:focus{border-color:var(--lav);}
   <div class="modal">
     <div class="mhead">
       <button class="mclose" onclick="closeMD()">✕</button>
-      <img id="modal-img" src="" alt="" style="display:none;width:100%;max-height:200px;object-fit:cover;border-radius:8px;margin-bottom:10px;margin-top:4px">
-      <div class="mtitle" id="mt"></div>
-      <div class="mcp" id="mc"></div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <img id="modal-img" src="" alt=""
+          style="display:none;width:80px;aspect-ratio:2/3;object-fit:cover;object-position:center top;border-radius:7px;flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div class="mtitle" id="mt"></div>
+          <div class="mcp" id="mc"></div>
+        </div>
+      </div>
     </div>
     <div class="mbody" id="mb"></div>
   </div>
@@ -2128,8 +2145,8 @@ textarea:focus{border-color:var(--lav);}
         <div class="form-grid">
           <div class="form-group full"><label>タイトル *</label><input type="text" id="af_title"></div>
           <div class="form-group full">
-            <label>作品イメージ画像URL</label>
-            <input type="url" id="af_image_url" placeholder="https://example.com/image.jpg（横長推奨）">
+            <label>作品イメージ画像URL（縦長ポスター推奨）</label>
+            <input type="url" id="af_image_url" placeholder="https://example.com/poster.jpg">
           </div>
           <div class="form-group">
             <label>放送開始日</label>

@@ -10,8 +10,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, deleteDoc,
-         collection, getDocs, serverTimestamp }
+import { getFirestore, doc, setDoc, deleteDoc, collection, getDocs, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -23,13 +22,15 @@ const firebaseConfig = {
   appId: "1:71290080508:web:47de06018b8617225bdb79"
 };
 const ADMIN_EMAILS = ["cory92059@gmail.com"];
-const app = initializeApp(firebaseConfig);
+const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
+// ── State ──────────────────────────────────────────────────────────────
 let currentUser = null, isAdmin = false;
-let talents = [], dramas = [];
+let talents = [];   // Firestore talents コレクション（俳優1人=1件）
+let dramas  = [];   // Firestore dramas コレクション（出演作品連携用）
 let editingId = null;
 let searchQ = '', filterStudio = '';
 
@@ -44,7 +45,9 @@ onAuthStateChanged(auth, user => {
   currentUser = user;
   isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   updateAuthUI();
-  document.querySelectorAll('.admin-only').forEach(el => { el.style.display = isAdmin ? '' : 'none'; });
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
   render();
 });
 
@@ -52,15 +55,62 @@ onAuthStateChanged(auth, user => {
 async function loadAll() {
   showLoading(true);
   try {
-    const [ts, ds] = await Promise.all([getDocs(collection(db,'talents')), getDocs(collection(db,'dramas'))]);
-    talents = []; ts.forEach(d => talents.push({_id:d.id,...d.data()}));
-    talents.sort((a,b) => (a.name_en||'').localeCompare(b.name_en||''));
-    dramas  = []; ds.forEach(d => dramas.push({_id:d.id,...d.data()}));
-  } catch(e) { talents=[]; dramas=[]; }
+    const [ts, ds] = await Promise.all([
+      getDocs(collection(db, 'talents')),
+      getDocs(collection(db, 'dramas')),
+    ]);
+    talents = [];
+    ts.forEach(d => talents.push({ _id: d.id, ...d.data() }));
+    // チューレン → 本名 → ID の順でソート
+    talents.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
+    dramas = [];
+    ds.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
+  } catch(e) { talents = []; dramas = []; }
   showLoading(false);
   render();
+  // index.htmlからのタレントリンク経由で直接開く
+  const openId = sessionStorage.getItem('openTalent');
+  if (openId) {
+    sessionStorage.removeItem('openTalent');
+    const t = talents.find(x => x._id === openId);
+    if (t) setTimeout(() => openDetail(openId), 100);
+  }
 }
 loadAll();
+
+// ── 年齢計算 ──────────────────────────────────────────────────────────
+function calcAge(birthday) {
+  // birthday: "YYYY-MM-DD" 形式
+  if (!birthday) return null;
+  const today = new Date();
+  const b = new Date(birthday);
+  if (isNaN(b.getTime())) return null;
+  let age = today.getFullYear() - b.getFullYear();
+  const m = today.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < b.getDate())) age--;
+  return age;
+}
+
+function formatBirthday(birthday) {
+  if (!birthday) return '─';
+  const b = new Date(birthday);
+  if (isNaN(b.getTime())) return birthday;
+  return `${b.getFullYear()}年${b.getMonth()+1}月${b.getDate()}日`;
+}
+
+// ── 出演作品：talent_id のみで照合（チューレン被り対策・文字列マッチ廃止） ──
+// talent_id が未設定の作品は出演作品に表示しない（「未紹介」として扱う）
+function getAppearances(talentId) {
+  if (!talentId) return [];
+  return dramas.filter(d => {
+    if (d.cps && d.cps.length) {
+      return d.cps.some(cp =>
+        cp.talent_id_top === talentId || cp.talent_id_bottom === talentId
+      );
+    }
+    return false;
+  });
+}
 
 // ── Render ─────────────────────────────────────────────────────────────
 function filtered() {
@@ -68,54 +118,60 @@ function filtered() {
   if (searchQ) {
     const q = searchQ.toLowerCase();
     l = l.filter(t =>
-      (t.name_en||'').toLowerCase().includes(q) ||
-      (t.names||[]).some(n=>n.toLowerCase().includes(q)) ||
-      (t.known_works_titles||[]).some(w=>w.toLowerCase().includes(q))
+      (t.nickname  || '').toLowerCase().includes(q) ||
+      (t.real_name || '').toLowerCase().includes(q)
     );
   }
-  if (filterStudio) l = l.filter(t => (t.studio||'') === filterStudio);
+  if (filterStudio) l = l.filter(t => (t.studio || '') === filterStudio);
   return l;
 }
 
 function render() {
   const list = filtered();
-  const el = document.getElementById('cnt'); if(el) el.textContent = list.length + ' 名';
-  const te = document.getElementById('sTotal'); if(te) te.textContent = talents.length;
+  const cntEl = document.getElementById('cnt');
+  if (cntEl) cntEl.textContent = list.length + ' 名';
+  const totalEl = document.getElementById('sTotal');
+  if (totalEl) totalEl.textContent = talents.length;
 
-  // 事務所フィルター
-  const studios = [...new Set(talents.map(t=>t.studio||'').filter(Boolean))].sort();
+  // 事務所フィルター選択肢
+  const studios = [...new Set(talents.map(t => t.studio || '').filter(Boolean))].sort();
   const ss = document.getElementById('studioFilter');
   if (ss) {
     const cur = ss.value;
     ss.innerHTML = '<option value="">すべての事務所</option>' +
-      studios.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');
+      studios.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}</option>`).join('');
   }
 
-  const grid = document.getElementById('talentGrid');
+  const grid  = document.getElementById('talentGrid');
   const empty = document.getElementById('empty');
-  if (!list.length) { grid.innerHTML=''; empty.style.display='block'; return; }
+  if (!list.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
   empty.style.display = 'none';
 
   grid.innerHTML = list.map(t => {
-    const names    = (t.names||[t.name_en||'']).join(' & ');
-    const initials = (t.names||['?']).map(n=>(n[0]||'?').toUpperCase()).join('');
-    const wc       = (t.known_works_titles||[]).length;
+    const age = calcAge(t.birthday);
+    const appearances = getAppearances(t._id);
+    const initial = (t.nickname || '?')[0].toUpperCase();
     return `
     <div class="tcard" onclick="openDetail('${t._id}')">
       <div class="tcard-img">
         ${t.image_url
-          ? `<img src="${t.image_url}" alt="${names}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=tcard-initial>${initials}</div>'">`
-          : `<div class="tcard-initial">${initials}</div>`}
+          ? `<img src="${t.image_url}" alt="${t.nickname||''}" loading="lazy"
+               onerror="this.parentElement.innerHTML='<div class=tcard-initial>${initial}</div>'">`
+          : `<div class="tcard-initial">${initial}</div>`}
         ${isAdmin ? `<button class="tcard-edit-btn" onclick="openEdit('${t._id}',event)">✏</button>` : ''}
       </div>
       <div class="tcard-body">
-        <div class="tcard-name">${names}</div>
-        ${t.studio ? `<div class="tcard-studio">${t.studio}</div>` : ''}
-        ${wc>0 ? `<div class="tcard-works">🎬 ${wc}作品</div>
-          <div class="tcard-worklist">
-            ${(t.known_works_titles||[]).slice(0,2).map(w=>`<span class="twchip">${w}</span>`).join('')}
-            ${wc>2?`<span class="twchip more">+${wc-2}</span>`:''}
-          </div>` : ''}
+        <div class="tcard-nickname">${t.nickname || '─'}</div>
+        ${t.real_name ? `<div class="tcard-realname">${t.real_name}</div>` : ''}
+        ${t.studio    ? `<div class="tcard-studio">${t.studio}</div>`     : ''}
+        ${age !== null ? `<div class="tcard-age">${age}歳</div>` : ''}
+        ${appearances.length > 0
+          ? `<div class="tcard-works">🎬 ${appearances.length}作品</div>
+             <div class="tcard-worklist">
+               ${appearances.slice(0, 2).map(d => `<span class="twchip">${d.title}</span>`).join('')}
+               ${appearances.length > 2 ? `<span class="twchip more">+${appearances.length - 2}</span>` : ''}
+             </div>`
+          : ''}
       </div>
     </div>`;
   }).join('');
@@ -123,191 +179,262 @@ function render() {
 
 // ── 詳細モーダル ─────────────────────────────────────────────────────
 window.openDetail = id => {
-  const t = talents.find(x=>x._id===id); if(!t) return;
-  const names    = (t.names||[t.name_en||'']).join(' & ');
-  const initials = (t.names||['?']).map(n=>(n[0]||'?').toUpperCase()).join('');
+  const t = talents.find(x => x._id === id);
+  if (!t) return;
+  const age = calcAge(t.birthday);
+  const initial = (t.nickname || '?')[0].toUpperCase();
+  const appearances = getAppearances(t._id);
 
-  document.getElementById('detailName').textContent   = names;
-  document.getElementById('detailCpKey').textContent  = t.cp_key ? `CP: ${t.cp_key}` : '';
-  document.getElementById('detailStudio').textContent = t.studio || '─';
-  document.getElementById('detailProfile').innerHTML  = t.profile
-    ? t.profile.replace(/\n/g,'<br>')
+  // 基本情報
+  document.getElementById('detailNickname').textContent  = t.nickname  || '─';
+  document.getElementById('detailRealname').textContent  = t.real_name || '─';
+  document.getElementById('detailStudio').textContent    = t.studio    || '─';
+  document.getElementById('detailBirthday').textContent  =
+    t.birthday ? `${formatBirthday(t.birthday)}${age !== null ? `（${age}歳）` : ''}` : '─';
+
+  // 画像
+  document.getElementById('detailImgWrap').innerHTML = t.image_url
+    ? `<img src="${t.image_url}" alt="${t.nickname||''}"
+         onerror="this.parentElement.innerHTML='<div class=detail-initial>${initial}</div>'">`
+    : `<div class="detail-initial">${initial}</div>`;
+
+  // プロフィール
+  document.getElementById('detailProfile').innerHTML = t.profile
+    ? t.profile.replace(/\n/g, '<br>')
     : '<span style="color:var(--muted)">プロフィール情報なし</span>';
 
-  document.getElementById('detailImgWrap').innerHTML = t.image_url
-    ? `<img src="${t.image_url}" alt="${names}" onerror="this.parentElement.innerHTML='<div class=detail-initial>${initials}</div>'">`
-    : `<div class="detail-initial">${initials}</div>`;
+  // 出演作品（talent_id で照合）
+  document.getElementById('detailWorks').innerHTML = appearances.length
+    ? appearances.map(d => `
+        <div class="work-chip" onclick="goToDrama('${d._id}')">
+          ${d.image_url
+            ? `<img src="${d.image_url}" alt="${d.title}" onerror="this.style.display='none'">`
+            : ''}
+          <div class="work-info">
+            <div class="work-title">${d.title}</div>
+            ${d.release_start ? `<div class="work-year">${(d.release_start||'').slice(0,7)}</div>` : ''}
+          </div>
+          <span class="work-arrow">→</span>
+        </div>`)
+      .join('')
+    : '<span style="color:var(--muted)">出演作品データなし<br><span style="font-size:11px">※ 作品編集フォームでCP欄のタレントを紐付けると表示されます</span></span>';
 
-  const titles = t.known_works_titles||[];
-  document.getElementById('detailWorks').innerHTML = titles.length
-    ? titles.map(title => {
-        const d = dramas.find(x=>x.title===title);
-        return d
-          ? `<div class="work-chip" onclick="goToDrama('${d._id||d.title}')">
-               ${d.image_url?`<img src="${d.image_url}" alt="${title}" onerror="this.style.display='none'">`:''}
-               <span>${title}</span><span class="work-arrow">→</span></div>`
-          : `<div class="work-chip no-link"><span>${title}</span></div>`;
-      }).join('')
-    : '<span style="color:var(--muted)">出演作品データなし</span>';
-
+  // SNS
   const links = [];
   if (t.sns_x)  links.push(`<a href="${t.sns_x}"  target="_blank" class="ext-link">𝕏 Twitter</a>`);
   if (t.sns_ig) links.push(`<a href="${t.sns_ig}" target="_blank" class="ext-link">📸 Instagram</a>`);
-  document.getElementById('detailLinks').innerHTML = links.join('')||'<span style="color:var(--muted)">─</span>';
+  document.getElementById('detailLinks').innerHTML =
+    links.join('') || '<span style="color:var(--muted)">─</span>';
 
+  // 管理者ボタン
   const adminEl = document.getElementById('detailAdmin');
   if (isAdmin) {
     adminEl.style.display = '';
     adminEl.innerHTML = `
-      <button class="adminActBtn" onclick="openEdit('${t._id}',event)">✏ 編集</button>
+      <button class="adminActBtn" onclick="openEdit('${t._id}', event)">✏ 編集</button>
       <button class="adminActBtn danger" onclick="deleteTalent('${t._id}')">🗑 削除</button>`;
-  } else { adminEl.style.display='none'; }
+  } else {
+    adminEl.style.display = 'none';
+  }
 
   document.getElementById('detailOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 };
+
 window.closeDetail = () => {
   document.getElementById('detailOverlay').classList.remove('open');
   document.body.style.overflow = '';
 };
-window.goToDrama = id => { window.location.href = `index.html?drama=${encodeURIComponent(id)}`; };
+
+window.goToDrama = id => {
+  window.location.href = `index.html?drama=${encodeURIComponent(id)}`;
+};
 
 // ── 追加・編集フォーム ─────────────────────────────────────────────
 window.openAdd = () => {
-  if(!isAdmin) return;
+  if (!isAdmin) return;
   editingId = null;
   resetForm();
   document.getElementById('formTitle').textContent = '✨ タレントを追加';
   document.getElementById('formModal').classList.add('open');
   document.body.style.overflow = 'hidden';
 };
+
 window.openEdit = (id, e) => {
-  if(!isAdmin) return;
-  e&&e.stopPropagation();
+  if (!isAdmin) return;
+  e && e.stopPropagation();
   editingId = id;
-  const t = talents.find(x=>x._id===id); if(!t) return;
+  const t = talents.find(x => x._id === id);
+  if (!t) return;
   fillForm(t);
   document.getElementById('formTitle').textContent = '✏ タレントを編集';
   document.getElementById('formModal').classList.add('open');
   document.body.style.overflow = 'hidden';
 };
+
 window.closeForm = () => {
   document.getElementById('formModal').classList.remove('open');
   document.body.style.overflow = '';
 };
 
 function resetForm() {
-  ['ft_cp_key','ft_name1','ft_name2','ft_studio','ft_image_url','ft_profile','ft_sns_x','ft_sns_ig','ft_works']
-    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  ['ft_nickname','ft_real_name','ft_birthday','ft_studio',
+   'ft_image_url','ft_profile','ft_sns_x','ft_sns_ig'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  updateAgePreview();
 }
+
 function fillForm(t) {
-  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||''; };
-  set('ft_cp_key',   t.cp_key);
-  set('ft_name1',    (t.names||[])[0]);
-  set('ft_name2',    (t.names||[])[1]);
-  set('ft_studio',   t.studio);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('ft_nickname',  t.nickname);
+  set('ft_real_name', t.real_name);
+  set('ft_birthday',  t.birthday);
+  set('ft_studio',    t.studio);
   set('ft_image_url', t.image_url);
-  set('ft_profile',  t.profile);
-  set('ft_sns_x',    t.sns_x);
-  set('ft_sns_ig',   t.sns_ig);
-  set('ft_works',    (t.known_works_titles||[]).join('\n'));
+  set('ft_profile',   t.profile);
+  set('ft_sns_x',     t.sns_x);
+  set('ft_sns_ig',    t.sns_ig);
+  updateAgePreview();
 }
+
+// 誕生日入力時に年齢をリアルタイムでプレビュー
+window.updateAgePreview = () => {
+  const bEl = document.getElementById('ft_birthday');
+  const aEl = document.getElementById('agePreview');
+  if (!bEl || !aEl) return;
+  const age = calcAge(bEl.value);
+  aEl.textContent = age !== null ? `現在 ${age} 歳` : '';
+};
+
 window.submitForm = async () => {
-  if(!isAdmin) return;
-  const get = id => (document.getElementById(id)||{}).value?.trim()||'';
-  const name1 = get('ft_name1');
-  if(!name1) { showToast('俳優名1を入力してください','error'); return; }
-  const names = [name1, get('ft_name2')].filter(Boolean);
-  const cpKey = get('ft_cp_key') || names.join('');
-  const known_works_titles = get('ft_works').split('\n').map(s=>s.trim()).filter(Boolean);
+  if (!isAdmin) return;
+  const get = id => (document.getElementById(id) || {}).value?.trim() || '';
+  const nickname = get('ft_nickname');
+  if (!nickname) { showToast('チューレン（ニックネーム）を入力してください', 'error'); return; }
+
   const data = {
-    cp_key: cpKey, name_en: names.join(' & '), names,
-    studio: get('ft_studio'), image_url: get('ft_image_url'),
-    profile: get('ft_profile'), sns_x: get('ft_sns_x'), sns_ig: get('ft_sns_ig'),
-    known_works_titles, updatedAt: serverTimestamp(),
+    nickname,
+    real_name: get('ft_real_name'),
+    birthday:  get('ft_birthday'),   // "YYYY-MM-DD"
+    studio:    get('ft_studio'),
+    image_url: get('ft_image_url'),
+    profile:   get('ft_profile'),
+    sns_x:     get('ft_sns_x'),
+    sns_ig:    get('ft_sns_ig'),
+    updatedAt: serverTimestamp(),
   };
+
   try {
-    await setDoc(doc(db,'talents', editingId||cpKey||Date.now().toString()), data, {merge:true});
-    showToast(editingId?'更新しました ✓':'追加しました ✓');
+    const docId = editingId || `${nickname}_${Date.now()}`;
+    await setDoc(doc(db, 'talents', docId), data, { merge: true });
+    showToast(editingId ? '更新しました ✓' : '追加しました ✓');
     closeForm();
     await loadAll();
-  } catch(e) { showToast('保存エラー: '+e.message,'error'); }
+  } catch(e) {
+    showToast('保存エラー: ' + e.message, 'error');
+  }
 };
+
 window.deleteTalent = async id => {
-  if(!isAdmin) return;
-  const t = talents.find(x=>x._id===id);
-  if(!confirm(`「${t?.name_en||id}」を削除しますか？`)) return;
+  if (!isAdmin) return;
+  const t = talents.find(x => x._id === id);
+  if (!confirm(`「${t?.nickname || id}」を削除しますか？`)) return;
   try {
-    await deleteDoc(doc(db,'talents',id));
-    showToast('削除しました'); closeDetail(); await loadAll();
-  } catch(e) { showToast('削除エラー: '+e.message,'error'); }
+    await deleteDoc(doc(db, 'talents', id));
+    showToast('削除しました');
+    closeDetail();
+    await loadAll();
+  } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
 };
 
 // ── UI Helpers ─────────────────────────────────────────────────────────
 function updateAuthUI() {
-  const loginBtn=document.getElementById('loginBtn'), userPanel=document.getElementById('userPanel');
-  const avatar=document.getElementById('userAvatar'), name=document.getElementById('userName');
-  const badge=document.getElementById('adminBadge');
+  const loginBtn  = document.getElementById('loginBtn');
+  const userPanel = document.getElementById('userPanel');
+  const avatar    = document.getElementById('userAvatar');
+  const name      = document.getElementById('userName');
+  const badge     = document.getElementById('adminBadge');
   if (currentUser) {
-    loginBtn.style.display='none'; userPanel.style.display='flex';
-    if(currentUser.photoURL){avatar.src=currentUser.photoURL;avatar.style.display='block';}
-    else avatar.style.display='none';
-    name.textContent=currentUser.displayName||currentUser.email;
-    badge.style.display=isAdmin?'inline-block':'none';
-  } else { loginBtn.style.display='flex'; userPanel.style.display='none'; }
+    loginBtn.style.display  = 'none';
+    userPanel.style.display = 'flex';
+    if (currentUser.photoURL) { avatar.src = currentUser.photoURL; avatar.style.display = 'block'; }
+    else avatar.style.display = 'none';
+    name.textContent = currentUser.displayName || currentUser.email;
+    badge.style.display = isAdmin ? 'inline-block' : 'none';
+  } else {
+    loginBtn.style.display  = 'flex';
+    userPanel.style.display = 'none';
+  }
 }
-function showToast(msg,type='ok'){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className='toast show '+(type||'');
-  clearTimeout(t._timer); t._timer=setTimeout(()=>t.classList.remove('show'),3000);
-}
-function showLoading(on){ const el=document.getElementById('loadingOverlay'); if(el) el.style.display=on?'flex':'none'; }
 
-document.addEventListener('DOMContentLoaded',()=>{
-  document.getElementById('searchInput').addEventListener('input',e=>{searchQ=e.target.value;render();});
-  document.getElementById('studioFilter').addEventListener('change',e=>{filterStudio=e.target.value;render();});
-  // 花びらアニメーション
-  const c=document.getElementById('petals');
-  for(let i=0;i<18;i++){const p=document.createElement('div');p.className='petal';
-    p.style.cssText=`left:${Math.random()*100}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*8}s;opacity:${.1+Math.random()*.25};transform:scale(${.5+Math.random()})`;
-    c.appendChild(p);}
+function showToast(msg, type = 'ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type || '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function showLoading(on) {
+  const el = document.getElementById('loadingOverlay');
+  if (el) el.style.display = on ? 'flex' : 'none';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('searchInput').addEventListener('input', e => {
+    searchQ = e.target.value; render();
+  });
+  document.getElementById('studioFilter').addEventListener('change', e => {
+    filterStudio = e.target.value; render();
+  });
+  // 花びら
+  const c = document.getElementById('petals');
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('div');
+    p.className = 'petal';
+    p.style.cssText = `left:${Math.random()*100}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*8}s;opacity:${.1+Math.random()*.25};transform:scale(${.5+Math.random()})`;
+    c.appendChild(p);
+  }
 });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){closeDetail();closeForm();} });
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeDetail(); closeForm(); }
+});
 </script>
 
-<!-- サイドバーJS（通常script：index.htmlと同じ） -->
+<!-- サイドバーJS（通常script） -->
 <script>
-window.sbToggleCollapse=function(){
-  const sb=document.getElementById('sidebar');
-  const c=sb.classList.toggle('collapsed');
-  sb.querySelector('.sb-toggle').textContent=c?'▶':'◀';
-  localStorage.setItem('sbCollapsed',c?'1':'0');
+window.sbToggleCollapse = function() {
+  const sb = document.getElementById('sidebar');
+  const c = sb.classList.toggle('collapsed');
+  sb.querySelector('.sb-toggle').textContent = c ? '▶' : '◀';
+  localStorage.setItem('sbCollapsed', c ? '1' : '0');
 };
-window.sbToggleMobile=function(){
+window.sbToggleMobile = function() {
   document.getElementById('sidebar').classList.toggle('mobile-open');
   document.getElementById('sbOverlay').classList.toggle('show');
 };
-window.sbCloseMobile=function(){
+window.sbCloseMobile = function() {
   document.getElementById('sidebar').classList.remove('mobile-open');
   document.getElementById('sbOverlay').classList.remove('show');
 };
-// 折りたたみ状態を復元
-(function(){
-  try{
-    if(localStorage.getItem('sbCollapsed')==='1'){
-      const sb=document.getElementById('sidebar');
-      if(sb){sb.classList.add('collapsed');const b=sb.querySelector('.sb-toggle');if(b)b.textContent='▶';}
+(function() {
+  try {
+    if (localStorage.getItem('sbCollapsed') === '1') {
+      const sb = document.getElementById('sidebar');
+      if (sb) { sb.classList.add('collapsed'); const b = sb.querySelector('.sb-toggle'); if (b) b.textContent = '▶'; }
     }
-  }catch(e){}
+  } catch(e) {}
 })();
-// showToast を通常scriptからも呼べるようにフォールバック定義
-if(typeof showToast==='undefined'){
-  window.showToast=function(msg,type){
-    const t=document.getElementById('toast');
-    t.textContent=msg;t.className='toast show '+(type||'');
-    clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000);
-  };
-}
+// showToast フォールバック（サイドバーの「準備中」ボタン用）
+window._showToastFallback = function(msg, type) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg; t.className = 'toast show ' + (type || '');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000);
+};
 </script>
 
 <style>
@@ -374,7 +501,7 @@ body{background:var(--dark);color:var(--text);font-family:'Noto Sans JP',sans-se
   .auth-bar{left:52px;}
 }
 
-/* ── ヒーロー ──────────────────────────────────────────────────── */
+/* ── ヒーロー ─────────────────────────────────────────────────── */
 .hero{background:linear-gradient(135deg,#1a0a28,#2a1040 40%,#1e0830 70%,#0e0518);
   padding:52px 20px 36px;text-align:center;position:relative;overflow:hidden;
   border-bottom:1px solid rgba(155,126,200,.3);}
@@ -404,24 +531,27 @@ body{background:var(--dark);color:var(--text);font-family:'Noto Sans JP',sans-se
 .logout-btn{background:none;border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:3px 9px;color:var(--muted);cursor:pointer;font-size:11px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
 .logout-btn:hover{border-color:var(--rose);color:var(--rl);}
 
-/* ── コントロール ──────────────────────────────────────────────── */
+/* ── コントロール ─────────────────────────────────────────────── */
 .controls{position:sticky;top:0;z-index:100;background:rgba(26,18,32,.96);backdrop-filter:blur(12px);
   border-bottom:1px solid rgba(155,126,200,.2);padding:9px 14px;}
 .ctrl-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;max-width:1400px;margin:0 auto;}
 .srch{position:relative;flex:1;min-width:150px;}
 .srch input{width:100%;background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);
-  border-radius:8px;padding:7px 10px 7px 30px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;transition:border-color .2s;}
+  border-radius:8px;padding:7px 10px 7px 30px;color:var(--text);
+  font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;transition:border-color .2s;}
 .srch input:focus{border-color:var(--rose);}
 .srch::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;pointer-events:none;}
-select{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);border-radius:8px;padding:7px 8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:12px;cursor:pointer;outline:none;}
+select{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);border-radius:8px;
+  padding:7px 8px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:12px;cursor:pointer;outline:none;}
 select option{background:var(--dark2);}
 .cnt{background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.2);border-radius:20px;padding:4px 11px;font-size:12px;color:var(--rl);white-space:nowrap;}
-.add-btn{background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.3);border-radius:8px;padding:6px 14px;color:var(--gold);cursor:pointer;font-size:12px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;white-space:nowrap;}
+.add-btn{background:rgba(212,168,67,.15);border:1px solid rgba(212,168,67,.3);border-radius:8px;
+  padding:6px 14px;color:var(--gold);cursor:pointer;font-size:12px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;white-space:nowrap;}
 .add-btn:hover{background:rgba(212,168,67,.25);}
 
-/* ── グリッド ──────────────────────────────────────────────────── */
+/* ── タレントグリッド ─────────────────────────────────────────── */
 .gwrap{max-width:1400px;margin:0 auto;padding:16px 14px;}
-.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:13px;}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:13px;}
 
 /* ── タレントカード ──────────────────────────────────────────── */
 .tcard{background:var(--card);border:1px solid var(--border);border-radius:12px;
@@ -431,7 +561,7 @@ select option{background:var(--dark2);}
 .tcard-img img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block;transition:transform .3s;}
 .tcard:hover .tcard-img img{transform:scale(1.05);}
 .tcard-initial{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-  font-family:'DM Serif Display',serif;font-size:2.8rem;
+  font-family:'DM Serif Display',serif;font-size:3rem;
   background:linear-gradient(135deg,rgba(155,126,200,.25),rgba(232,84,122,.15));
   color:rgba(240,232,248,.4);}
 .tcard-edit-btn{position:absolute;top:7px;right:7px;background:rgba(26,18,32,.88);
@@ -439,21 +569,24 @@ select option{background:var(--dark2);}
   color:var(--gold);cursor:pointer;font-size:11px;opacity:0;transition:opacity .2s;}
 .tcard:hover .tcard-edit-btn{opacity:1;}
 .tcard-body{padding:10px 12px 12px;}
-.tcard-name{font-family:'DM Serif Display',serif;font-size:14px;color:var(--text);margin-bottom:3px;line-height:1.35;}
-.tcard-studio{display:inline-block;font-size:10px;color:var(--muted);background:rgba(155,126,200,.1);
-  border:1px solid rgba(155,126,200,.15);padding:1px 7px;border-radius:10px;margin-bottom:6px;}
+.tcard-nickname{font-family:'DM Serif Display',serif;font-size:15px;color:var(--text);margin-bottom:1px;line-height:1.3;}
+.tcard-realname{font-size:10px;color:var(--muted);margin-bottom:3px;}
+.tcard-studio{display:inline-block;font-size:10px;color:var(--muted);
+  background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.15);
+  padding:1px 7px;border-radius:10px;margin-bottom:4px;}
+.tcard-age{font-size:11px;color:var(--ll);margin-bottom:5px;}
 .tcard-works{font-size:11px;color:var(--muted);margin-bottom:4px;}
 .tcard-worklist{display:flex;gap:4px;flex-wrap:wrap;}
 .twchip{font-size:10px;padding:2px 7px;background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.2);border-radius:10px;color:var(--rl);}
 .twchip.more{background:rgba(155,126,200,.1);border-color:rgba(155,126,200,.2);color:var(--ll);}
 
-/* ── 詳細モーダル ────────────────────────────────────────────── */
+/* ── 詳細モーダル ─────────────────────────────────────────────── */
 .overlay{position:fixed;inset:0;background:rgba(10,5,18,.9);backdrop-filter:blur(8px);
   z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;
   opacity:0;pointer-events:none;transition:opacity .25s;}
 .overlay.open{opacity:1;pointer-events:all;}
 .modal{background:linear-gradient(160deg,#261833,#1e1228);border:1px solid rgba(155,126,200,.3);
-  border-radius:16px;max-width:660px;width:100%;max-height:90vh;overflow-y:auto;
+  border-radius:16px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto;
   scrollbar-width:thin;scrollbar-color:rgba(155,126,200,.3) transparent;
   transform:translateY(20px);transition:transform .25s;position:relative;}
 .overlay.open .modal{transform:translateY(0);}
@@ -461,45 +594,56 @@ select option{background:var(--dark2);}
   border:1px solid rgba(155,126,200,.2);border-radius:50%;width:28px;height:28px;
   display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:14px;transition:all .2s;z-index:2;}
 .mclose:hover{background:rgba(232,84,122,.2);color:var(--rl);}
+
 .detail-layout{display:grid;grid-template-columns:200px 1fr;}
 .detail-img-col{padding:22px 0 22px 22px;}
 .detail-img-col img{width:100%;aspect-ratio:2/3;object-fit:cover;object-position:center top;border-radius:10px;display:block;}
 .detail-initial{width:100%;aspect-ratio:2/3;display:flex;align-items:center;justify-content:center;
-  font-family:'DM Serif Display',serif;font-size:3rem;
+  font-family:'DM Serif Display',serif;font-size:3.5rem;
   background:linear-gradient(135deg,rgba(155,126,200,.25),rgba(232,84,122,.15));
   color:rgba(240,232,248,.4);border-radius:10px;}
 .detail-info-col{padding:22px 22px 22px 18px;overflow:hidden;}
-.detail-name{font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--text);margin-bottom:2px;padding-right:36px;}
-.detail-cpkey{font-size:11px;color:var(--lav);margin-bottom:14px;}
-.d-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px;margin-top:14px;}
-.d-label:first-of-type{margin-top:0;}
+
+.detail-nickname{font-family:'DM Serif Display',serif;font-size:1.7rem;color:var(--text);
+  margin-bottom:2px;padding-right:36px;line-height:1.2;}
+
+/* プロフィールグリッド（基本情報） */
+.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:14px;margin-top:10px;}
+.pg-item{background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.12);border-radius:8px;padding:7px 10px;}
+.pg-label{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px;}
+.pg-val{font-size:13px;color:var(--text);}
+
+.d-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px;margin-top:14px;}
 .d-val{font-size:13px;color:var(--text);line-height:1.7;}
+
+/* 出演作品 */
 .works-list{display:flex;flex-direction:column;gap:5px;}
-.work-chip{display:flex;align-items:center;gap:9px;padding:6px 10px;
+.work-chip{display:flex;align-items:center;gap:9px;padding:7px 10px;
   background:rgba(155,126,200,.07);border:1px solid rgba(155,126,200,.15);border-radius:8px;cursor:pointer;transition:all .2s;}
 .work-chip:hover{background:rgba(232,84,122,.1);border-color:rgba(232,84,122,.3);}
-.work-chip.no-link{cursor:default;}
-.work-chip.no-link:hover{background:rgba(155,126,200,.07);border-color:rgba(155,126,200,.15);}
 .work-chip img{width:28px;height:42px;object-fit:cover;border-radius:4px;flex-shrink:0;}
-.work-chip span{flex:1;font-size:12px;color:var(--text);}
-.work-arrow{font-size:11px;color:var(--muted);}
+.work-info{flex:1;min-width:0;}
+.work-title{font-size:12px;color:var(--text);}
+.work-year{font-size:10px;color:var(--muted);margin-top:1px;}
+.work-arrow{font-size:11px;color:var(--muted);flex-shrink:0;}
 .ext-links{display:flex;gap:8px;flex-wrap:wrap;}
 .ext-link{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;
   background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);border-radius:20px;color:var(--ll);font-size:12px;text-decoration:none;transition:all .2s;}
 .ext-link:hover{background:rgba(155,126,200,.2);border-color:var(--lav);}
 .admin-section{margin-top:14px;padding:10px 12px;background:rgba(212,168,67,.05);
   border:1px solid rgba(212,168,67,.15);border-radius:10px;display:flex;gap:8px;flex-wrap:wrap;}
-.adminActBtn{background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);border-radius:8px;padding:7px 14px;color:var(--gold);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+.adminActBtn{background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.25);border-radius:8px;
+  padding:7px 14px;color:var(--gold);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
 .adminActBtn:hover{background:rgba(212,168,67,.2);}
 .adminActBtn.danger{background:rgba(232,84,122,.1);border-color:rgba(232,84,122,.25);color:var(--rl);}
 
-/* ── 追加・編集モーダル ────────────────────────────────────────── */
+/* ── 追加・編集モーダル ─────────────────────────────────────── */
 .admin-overlay{position:fixed;inset:0;background:rgba(10,5,18,.92);backdrop-filter:blur(8px);
   z-index:2000;display:flex;align-items:center;justify-content:center;padding:14px;
   opacity:0;pointer-events:none;transition:opacity .25s;}
 .admin-overlay.open{opacity:1;pointer-events:all;}
 .admin-modal{background:linear-gradient(160deg,#1a1230,#150e22);border:1px solid rgba(212,168,67,.3);
-  border-radius:16px;max-width:580px;width:100%;max-height:92vh;overflow-y:auto;scrollbar-width:thin;}
+  border-radius:16px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;scrollbar-width:thin;}
 .am-head{padding:16px 18px 12px;border-bottom:1px solid rgba(212,168,67,.15);
   display:flex;justify-content:space-between;align-items:center;
   position:sticky;top:0;background:linear-gradient(160deg,#1a1230,#150e22);z-index:2;}
@@ -507,22 +651,25 @@ select option{background:var(--dark2);}
 .am-close{background:none;border:1px solid rgba(212,168,67,.2);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:14px;}
 .am-body{padding:16px 18px 10px;}
 .am-section{margin-bottom:18px;}
-.am-section-title{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);margin-bottom:10px;padding-bottom:5px;border-bottom:1px solid rgba(212,168,67,.15);}
+.am-section-title{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--gold);
+  margin-bottom:10px;padding-bottom:5px;border-bottom:1px solid rgba(212,168,67,.15);}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
 .form-group{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
-.form-group.full{grid-column:1/-1;}
 .form-group label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
 .form-group input,.form-group textarea{background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);
   border-radius:8px;padding:7px 10px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;}
 .form-group input:focus,.form-group textarea:focus{border-color:var(--gold);}
-.form-group textarea{resize:vertical;min-height:64px;}
-.rate-hint{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.5;}
+.form-group textarea{resize:vertical;min-height:72px;}
+.age-preview{font-size:12px;color:var(--ll);margin-top:4px;min-height:18px;}
+.form-hint{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.5;}
 .am-footer{padding:10px 18px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid rgba(212,168,67,.1);}
-.am-save{background:rgba(212,168,67,.2);border:1px solid rgba(212,168,67,.4);border-radius:8px;padding:9px 20px;color:var(--gold);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;font-weight:700;transition:all .2s;}
+.am-save{background:rgba(212,168,67,.2);border:1px solid rgba(212,168,67,.4);border-radius:8px;
+  padding:9px 20px;color:var(--gold);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;font-weight:700;transition:all .2s;}
 .am-save:hover{background:rgba(212,168,67,.35);}
-.am-cancel{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:9px 16px;color:var(--muted);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;}
+.am-cancel{background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);border-radius:8px;
+  padding:9px 16px;color:var(--muted);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;}
 
-/* ── 共通 ──────────────────────────────────────────────────────── */
+/* ── 共通 ─────────────────────────────────────────────────────── */
 #loadingOverlay{position:fixed;inset:0;background:rgba(10,5,18,.85);z-index:9998;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;}
 .loading-spinner{width:40px;height:40px;border:3px solid rgba(155,126,200,.2);border-top-color:var(--lav);border-radius:50%;animation:spin .8s linear infinite;}
@@ -543,25 +690,25 @@ select option{background:var(--dark2);}
   .detail-layout{grid-template-columns:1fr;}
   .detail-img-col{padding:18px 18px 0;max-width:140px;margin:0 auto;}
   .detail-info-col{padding:14px 18px 18px;}
+  .profile-grid{grid-template-columns:1fr;}
   .form-grid{grid-template-columns:1fr;}
+  .detail-nickname{padding-right:40px;}
 }
 </style>
 </head>
 <body>
 
-<!-- ローディング -->
 <div id="loadingOverlay">
   <div class="loading-spinner"></div>
   <div class="loading-text">読み込み中...</div>
 </div>
 
-<!-- モバイル用ハンバーガー -->
 <button class="sb-mobile-toggle" onclick="sbToggleMobile()" aria-label="メニュー">☰</button>
 <div class="sb-overlay" id="sbOverlay" onclick="sbCloseMobile()"></div>
 
 <div class="page-layout">
 
-  <!-- ▼ サイドバー（index.htmlと同一構造・タレント名鑑のみactive） ▼ -->
+  <!-- サイドバー -->
   <nav class="sidebar-wrap" id="sidebar" aria-label="サイドナビゲーション">
     <div class="sb-header">
       <div class="sb-logo-icon">🌸</div>
@@ -572,39 +719,33 @@ select option{background:var(--dark2);}
       <button class="sb-toggle" onclick="sbToggleCollapse()" title="サイドバーを折りたたむ">◀</button>
     </div>
     <div class="sb-body">
-
       <div class="sb-section-label">作品を探す</div>
       <a class="sb-item" href="index.html">
         <span class="sb-icon si-purple">🎬</span><span>作品を探す</span>
       </a>
       <hr class="sb-divider">
-
       <div class="sb-section-label">マイリスト</div>
       <a class="sb-item" href="index.html">
         <span class="sb-icon si-teal">👤</span><span>マイリスト</span>
       </a>
       <hr class="sb-divider">
-
       <div class="sb-section-label">Coryの視聴リスト</div>
       <a class="sb-item" href="index.html">
         <span class="sb-icon si-pink">🌸</span><span>Coryの視聴リスト</span>
       </a>
       <hr class="sb-divider">
-
-      <!-- タレント名鑑：現在のページ = active -->
+      <!-- タレント名鑑：このページ = active -->
       <div class="sb-section-label">ThaiGLタレント名鑑</div>
       <button class="sb-item active">
         <span class="sb-icon si-teal">👩</span><span>タレント名鑑</span>
       </button>
       <hr class="sb-divider">
-
       <div class="sb-section-label">次何見る？</div>
-      <button class="sb-item" onclick="showToast('近日公開予定です','warn')">
+      <button class="sb-item" onclick="_showToastFallback('近日公開予定です','warn')">
         <span class="sb-icon si-gold">🎲</span><span>次何見る？</span>
         <span class="sb-badge b-gold">準備中</span>
       </button>
       <hr class="sb-divider">
-
       <div class="sb-section-label">その他</div>
       <a class="sb-item" href="https://x.com/cory_fbshipper" target="_blank">
         <span class="sb-icon si-gray">𝕏</span><span>X ＠cory_fbshipper</span>
@@ -613,8 +754,6 @@ select option{background:var(--dark2);}
         <span class="sb-icon si-gray">📝</span><span>Note ＠cory_fbshipper</span>
       </a>
       <hr class="sb-divider">
-
-      <!-- 管理者メニュー（管理者のみ表示） -->
       <div class="sb-section-label admin-only" style="display:none">管理者メニュー</div>
       <button class="sb-item admin-only" style="display:none" onclick="openAdd()">
         <span class="sb-icon si-gold">＋</span><span>タレントを追加</span>
@@ -622,10 +761,8 @@ select option{background:var(--dark2);}
       <a class="sb-item admin-only" style="display:none" href="index.html">
         <span class="sb-icon si-gold">🎬</span><span>作品データ管理</span>
       </a>
-
     </div>
   </nav>
-  <!-- ▲ サイドバーここまで ▲ -->
 
   <!-- メインコンテンツ -->
   <div class="main-wrap">
@@ -644,15 +781,17 @@ select option{background:var(--dark2);}
       </div>
       <div class="petals" id="petals"></div>
       <h1>👩 タレント名鑑</h1>
-      <div class="hero-sub">ThaiGL Actress &amp; CP Directory</div>
+      <div class="hero-sub">ThaiGL Actress Directory</div>
       <div class="hero-stats">
-        <div><div class="stat-num" id="sTotal">─</div><div class="stat-label">CP登録中</div></div>
+        <div><div class="stat-num" id="sTotal">─</div><div class="stat-label">人登録中</div></div>
       </div>
     </div>
 
     <div class="controls">
       <div class="ctrl-row">
-        <div class="srch"><input type="text" id="searchInput" placeholder="俳優名・作品名で検索..."></div>
+        <div class="srch">
+          <input type="text" id="searchInput" placeholder="チューレン・本名で検索...">
+        </div>
         <select id="studioFilter"><option value="">すべての事務所</option></select>
         <div class="cnt" id="cnt">─ 名</div>
         <button class="add-btn admin-only" style="display:none" onclick="openAdd()">＋ タレントを追加</button>
@@ -678,16 +817,33 @@ select option{background:var(--dark2);}
     <div class="detail-layout">
       <div class="detail-img-col"><div id="detailImgWrap"></div></div>
       <div class="detail-info-col">
-        <div class="detail-name" id="detailName"></div>
-        <div class="detail-cpkey" id="detailCpKey"></div>
-        <div class="d-label">所属事務所</div>
-        <div class="d-val" id="detailStudio"></div>
+        <div class="detail-nickname" id="detailNickname"></div>
+
+        <!-- 基本情報グリッド -->
+        <div class="profile-grid">
+          <div class="pg-item">
+            <div class="pg-label">本名</div>
+            <div class="pg-val" id="detailRealname"></div>
+          </div>
+          <div class="pg-item">
+            <div class="pg-label">所属事務所</div>
+            <div class="pg-val" id="detailStudio"></div>
+          </div>
+          <div class="pg-item" style="grid-column:1/-1">
+            <div class="pg-label">誕生日</div>
+            <div class="pg-val" id="detailBirthday"></div>
+          </div>
+        </div>
+
         <div class="d-label">プロフィール</div>
         <div class="d-val" id="detailProfile"></div>
+
         <div class="d-label">🎬 出演作品</div>
         <div class="works-list" id="detailWorks"></div>
+
         <div class="d-label">🔗 SNS</div>
         <div class="ext-links" id="detailLinks"></div>
+
         <div class="admin-section admin-only" id="detailAdmin" style="display:none"></div>
       </div>
     </div>
@@ -707,20 +863,22 @@ select option{background:var(--dark2);}
         <div class="am-section-title">👩 基本情報</div>
         <div class="form-grid">
           <div class="form-group">
-            <label>俳優名1（Top）*</label>
-            <input type="text" id="ft_name1" placeholder="例: Freen">
+            <label>チューレン（ニックネーム）*</label>
+            <input type="text" id="ft_nickname" placeholder="例: Freen, Milk, Becky">
+            <div class="form-hint">※ 作品一覧のCP名と照合して出演作品を自動表示します</div>
           </div>
           <div class="form-group">
-            <label>俳優名2（Bottom）</label>
-            <input type="text" id="ft_name2" placeholder="例: Becky">
+            <label>本名</label>
+            <input type="text" id="ft_real_name" placeholder="例: Napapon Keawkoon">
           </div>
           <div class="form-group">
-            <label>CPキー（Firestoreのキー）</label>
-            <input type="text" id="ft_cp_key" placeholder="例: FreenBecky（空欄で自動生成）">
+            <label>誕生日</label>
+            <input type="date" id="ft_birthday" oninput="updateAgePreview()">
+            <div class="age-preview" id="agePreview"></div>
           </div>
           <div class="form-group">
             <label>所属事務所</label>
-            <input type="text" id="ft_studio" placeholder="例: GMMTV, IDF">
+            <input type="text" id="ft_studio" placeholder="例: GMMTV, IDF, GMM">
           </div>
         </div>
       </div>
@@ -739,15 +897,6 @@ select option{background:var(--dark2);}
           <label>紹介文</label>
           <textarea id="ft_profile" rows="4" placeholder="俳優の紹介文を入力..."></textarea>
         </div>
-      </div>
-
-      <div class="am-section">
-        <div class="am-section-title">🎬 出演作品</div>
-        <div class="form-group">
-          <label>出演作品タイトル（1行に1作品）</label>
-          <textarea id="ft_works" rows="5" placeholder="GAP&#10;23.5&#10;The Loyal Pin"></textarea>
-        </div>
-        <div class="rate-hint">※ 作品一覧ページのタイトルと完全に一致させると、作品へのリンクが自動で作成されます</div>
       </div>
 
       <div class="am-section">

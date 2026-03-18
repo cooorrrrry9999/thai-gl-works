@@ -108,12 +108,13 @@ function formatBirthday(birthday) {
 function getAppearances(talentId) {
   if (!talentId) return [];
   const list = dramas.filter(d => {
-    if (d.cps && d.cps.length) {
-      return d.cps.some(cp =>
-        cp.talent_id_top === talentId || cp.talent_id_bottom === talentId
-      );
-    }
-    return false;
+    // CPに含まれるか
+    const inCp = d.cps && d.cps.some(cp =>
+      cp.talent_id_top === talentId || cp.talent_id_bottom === talentId
+    );
+    // 単独出演者に含まれるか
+    const inCast = d.casts && d.casts.some(c => c.talent_id === talentId);
+    return inCp || inCast;
   });
   // 新しい順（release_startが新しい順）
   return list.sort((a, b) => (b.release_start || b.release || '0000').localeCompare(a.release_start || a.release || '0000'));

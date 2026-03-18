@@ -1131,22 +1131,28 @@ function buildFilterDropdowns() {
   if (ddStatus)   ddStatus.innerHTML   = makeItems('status', statusItems);
   if (ddYear)     ddYear.innerHTML     = makeItems('year', years);
 
-  // 配信：env-panelの中にチップ形式で描画
+  // 配信：env-panelの中にチップ形式で描画（createElement使用でonclickが壊れない）
   const pltChips = document.getElementById('env-plt-chips');
   if (pltChips) {
-    pltChips.innerHTML = platItems.map((v,i) =>
-      `<button class="env-chip${FILTER_PLT.includes(v)?' active':''}"
-         data-val="${v}" onclick="envToggle('plt','${v}')">${v}</button>`
-    ).join('');
+    pltChips.innerHTML = '';
+    platItems.forEach(v => {
+      const btn = document.createElement('button');
+      btn.className = 'env-chip' + (FILTER_PLT.includes(v) ? ' active' : '');
+      btn.dataset.val = v;
+      btn.textContent = v;
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        window.envToggle('plt', v);
+      });
+      pltChips.appendChild(btn);
+    });
   }
-  // VPN・字幕チップのアクティブ状態を同期
-  ['不要(日本)','要(日本以外)'].forEach((v,i) => {
-    const el = document.getElementById('ec-vpn-'+i);
-    if (el) el.classList.toggle('active', FILTER_VPN.includes(v));
+  // VPN・字幕チップのアクティブ状態を同期（HTML側のボタンはそのまま使う）
+  document.querySelectorAll('#env-vpn-chips .env-chip').forEach(btn => {
+    btn.classList.toggle('active', FILTER_VPN.includes(btn.dataset.val));
   });
-  SUBTITLE_OPTIONS.forEach((v,i) => {
-    const el = document.getElementById('ec-sub-'+i);
-    if (el) el.classList.toggle('active', FILTER_SUBTITLE.includes(v));
+  document.querySelectorAll('#env-sub-chips .env-chip').forEach(btn => {
+    btn.classList.toggle('active', FILTER_SUBTITLE.includes(btn.dataset.val));
   });
 
   // 制作会社：インクリメンタルサーチ型で描画
@@ -2656,8 +2662,8 @@ textarea:focus{border-color:var(--lav);}
         <div class="env-section">
           <div class="env-sec-label">🔒 VPN</div>
           <div class="env-chips" id="env-vpn-chips">
-            <button class="env-chip" data-val="不要(日本)" onclick="envToggle('vpn','不要(日本)')">不要（日本）</button>
-            <button class="env-chip" data-val="要(日本以外)" onclick="envToggle('vpn','要(日本以外)')">要（日本以外）</button>
+            <button class="env-chip" data-val="不要(日本)" data-type="vpn">不要（日本）</button>
+            <button class="env-chip" data-val="要(日本以外)" data-type="vpn">要（日本以外）</button>
           </div>
         </div>
 
@@ -2667,11 +2673,11 @@ textarea:focus{border-color:var(--lav);}
         <div class="env-section">
           <div class="env-sec-label">💬 字幕</div>
           <div class="env-chips" id="env-sub-chips">
-            <button class="env-chip" data-val="完備" onclick="envToggle('subtitle','完備')">完備</button>
-            <button class="env-chip" data-val="fan sub" onclick="envToggle('subtitle','fan sub')">fan sub</button>
-            <button class="env-chip" data-val="自動翻訳" onclick="envToggle('subtitle','自動翻訳')">自動翻訳</button>
-            <button class="env-chip" data-val="英字幕のみ" onclick="envToggle('subtitle','英字幕のみ')">英字幕のみ</button>
-            <button class="env-chip" data-val="なし" onclick="envToggle('subtitle','なし')">なし</button>
+            <button class="env-chip" data-val="完備" data-type="subtitle">完備</button>
+            <button class="env-chip" data-val="fan sub" data-type="subtitle">fan sub</button>
+            <button class="env-chip" data-val="自動翻訳" data-type="subtitle">自動翻訳</button>
+            <button class="env-chip" data-val="英字幕のみ" data-type="subtitle">英字幕のみ</button>
+            <button class="env-chip" data-val="なし" data-type="subtitle">なし</button>
           </div>
         </div>
 
@@ -3100,6 +3106,18 @@ window.updateSidebarState = function updateSidebarState() {
 })();
 
 /* ── 視聴環境パネル（配信・VPN・字幕を一括設定） ─────────────────────── */
+// VPN・字幕チップにイベントリスナーを設定（onclick属性の代わり）
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('#env-vpn-chips .env-chip, #env-sub-chips .env-chip').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const type = btn.dataset.type;
+      const val  = btn.dataset.val;
+      if (type && val) window.envToggle(type, val);
+    });
+  });
+});
+
 window.envToggle = function(type, val) {
   // module内のFILTER配列をブリッジ経由で操作
   if (type === 'plt')      window._FILTER_PLT_TOGGLE?.(val);

@@ -124,8 +124,7 @@ function filtered() {
     l = l.filter(t =>
       (t.nickname       || '').toLowerCase().includes(q) ||
       (t.nickname_kana  || '').includes(q) ||
-      (t.real_name      || '').toLowerCase().includes(q) ||
-      (t.real_name_kana || '').includes(q)
+      (t.real_name || '').toLowerCase().includes(q)
     );
   }
   return l;
@@ -191,9 +190,7 @@ window.openDetail = id => {
   document.getElementById('detailNickname').textContent     = t.nickname  || '─';
   const nkEl = document.getElementById('detailNicknameKana');
   if (nkEl) nkEl.textContent = t.nickname_kana || '';
-  document.getElementById('detailRealname').textContent     = t.real_name || '─';
-  const rkEl = document.getElementById('detailRealnameKana');
-  if (rkEl) rkEl.textContent = t.real_name_kana || '';
+  document.getElementById('detailRealname').textContent = t.real_name || '─';
 
   document.getElementById('detailBirthday').textContent  =
     t.birthday ? `${formatBirthday(t.birthday)}${age !== null ? `（${age}歳）` : ''}` : '─';
@@ -322,7 +319,7 @@ window.closeForm = () => {
 };
 
 function resetForm() {
-  ['ft_nickname','ft_nickname_kana','ft_real_name','ft_real_name_kana','ft_birthday',
+  ['ft_nickname','ft_nickname_kana','ft_real_name','ft_birthday',
    'ft_image_url','ft_profile','ft_sns_x','ft_sns_ig'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -334,8 +331,7 @@ function fillForm(t) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
   set('ft_nickname',      t.nickname);
   set('ft_nickname_kana',  t.nickname_kana || '');
-  set('ft_real_name',      t.real_name);
-  set('ft_real_name_kana', t.real_name_kana || '');
+  set('ft_real_name', t.real_name);
   set('ft_birthday',  t.birthday);
 
   set('ft_image_url', t.image_url);
@@ -364,7 +360,6 @@ window.submitForm = async () => {
     nickname,
     nickname_kana: get('ft_nickname_kana'),
     real_name: get('ft_real_name'),
-    real_name_kana: get('ft_real_name_kana'),
     birthday:  get('ft_birthday'),   // "YYYY-MM-DD"
 
     image_url: get('ft_image_url'),
@@ -873,7 +868,6 @@ select option{background:var(--dark2);}
           <div class="pg-item">
             <div class="pg-label">本名</div>
             <div class="pg-val" id="detailRealname"></div>
-            <div class="pg-kana" id="detailRealnameKana"></div>
           </div>
   
           <div class="pg-item" style="grid-column:1/-1">
@@ -922,10 +916,7 @@ select option{background:var(--dark2);}
             <label>本名</label>
             <input type="text" id="ft_real_name" placeholder="例: Napapon Keawkoon">
           </div>
-          <div class="form-group">
-            <label>本名 読み仮名（カタカナ）</label>
-            <input type="text" id="ft_real_name_kana" placeholder="例: ナパポン ケーウクーン">
-          </div>
+
           <div class="form-group">
             <label>誕生日</label>
             <input type="text" id="ft_birthday" placeholder="2000-04-05" oninput="updateAgePreview()" onblur="autoFixDate(this);updateAgePreview()">

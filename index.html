@@ -939,9 +939,10 @@ window.toggleDropdown = function(id) {
   });
   document.getElementById(id)?.classList.toggle('open');
 };
-// ドロップダウン外クリックで閉じる（env-panelのチップクリックは閉じない）
+// ドロップダウン外クリックで閉じる（env-chip・env-panel内は閉じない）
 document.addEventListener('click', e => {
-  if (!e.target.closest('.multi-select-wrap') && !e.target.closest('.env-panel')) {
+  if (e.target.closest('.env-chip') || e.target.closest('.env-panel')) return;
+  if (!e.target.closest('.multi-select-wrap')) {
     document.querySelectorAll('.multi-dropdown').forEach(el => el.classList.remove('open'));
   }
 });
@@ -1134,18 +1135,9 @@ function buildFilterDropdowns() {
   // 配信：env-panelの中にチップ形式で描画（createElement使用でonclickが壊れない）
   const pltChips = document.getElementById('env-plt-chips');
   if (pltChips) {
-    pltChips.innerHTML = '';
-    platItems.forEach(v => {
-      const btn = document.createElement('button');
-      btn.className = 'env-chip' + (FILTER_PLT.includes(v) ? ' active' : '');
-      btn.dataset.val = v;
-      btn.textContent = v;
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        window.envToggle('plt', v);
-      });
-      pltChips.appendChild(btn);
-    });
+    pltChips.innerHTML = platItems.map(v =>
+      `<button class="env-chip${FILTER_PLT.includes(v)?' active':''}" data-type="plt" data-val="${v}">${v}</button>`
+    ).join('');
   }
   // VPN・字幕チップのアクティブ状態を同期（HTML側のボタンはそのまま使う）
   document.querySelectorAll('#env-vpn-chips .env-chip').forEach(btn => {
@@ -3106,16 +3098,15 @@ window.updateSidebarState = function updateSidebarState() {
 })();
 
 /* ── 視聴環境パネル（配信・VPN・字幕を一括設定） ─────────────────────── */
-// VPN・字幕チップにイベントリスナーを設定（onclick属性の代わり）
-document.addEventListener('DOMContentLoaded', function() {
-  document.querySelectorAll('#env-vpn-chips .env-chip, #env-sub-chips .env-chip').forEach(btn => {
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      const type = btn.dataset.type;
-      const val  = btn.dataset.val;
-      if (type && val) window.envToggle(type, val);
-    });
-  });
+// env-panel全体にイベント委譲（チップのonclick代わり）
+document.addEventListener('click', function(e) {
+  const chip = e.target.closest('.env-chip');
+  if (!chip) return;
+  const type = chip.dataset.type;
+  const val  = chip.dataset.val;
+  if (!type || !val) return;
+  e.stopPropagation();
+  window.envToggle(type, val);
 });
 
 window.envToggle = function(type, val) {

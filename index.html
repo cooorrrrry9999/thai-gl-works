@@ -1588,7 +1588,17 @@ function renderModal(id) {
       return `<a href="talents.html" onclick="sessionStorage.setItem('openTalent','${t._id}')" style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 4px;background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);border-radius:20px;color:var(--ll);font-size:12px;text-decoration:none;transition:all .2s" onmouseover="this.style.background='rgba(232,84,122,.15)'" onmouseout="this.style.background='rgba(155,126,200,.1)'">${img}<span>${t.nickname||nickname}</span></a>`;
     };
     b += `<div class="msec"><div class="mlab">👩‍❤️‍👩 キャスト・CP</div><div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">`;
-    // 単独出演者を先に表示
+    cpList.forEach(c => {
+      b += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:rgba(155,126,200,.05);border:1px solid rgba(155,126,200,.1);border-radius:8px">`;
+      b += `<div style="display:flex;align-items:center;gap:6px">${talentLink(c.top, c.talent_id_top)}`;
+      if (c.bottom) b += `<span style="color:var(--muted);font-size:11px">×</span>${talentLink(c.bottom, c.talent_id_bottom)}`;
+      b += `</div>`;
+      if (c.ship_name) b += `<span style="font-size:11px;color:var(--gold);background:rgba(212,168,67,.1);padding:2px 8px;border-radius:10px">${c.ship_name}</span>`;
+      if (c.note) b += `<span style="font-size:11px;color:var(--muted)">${c.note}</span>`;
+      b += `</div>`;
+    });
+    b += `</div></div>`;
+    // 単独出演者をCPの後に表示
     if (d.casts && d.casts.length) {
       d.casts.forEach(c => {
         const t = c.talent_id ? localTalents.find(x => x._id === c.talent_id) : null;
@@ -1605,16 +1615,6 @@ function renderModal(id) {
         </div>`;
       });
     }
-    cpList.forEach(c => {
-      b += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:rgba(155,126,200,.05);border:1px solid rgba(155,126,200,.1);border-radius:8px">`;
-      b += `<div style="display:flex;align-items:center;gap:6px">${talentLink(c.top, c.talent_id_top)}`;
-      if (c.bottom) b += `<span style="color:var(--muted);font-size:11px">×</span>${talentLink(c.bottom, c.talent_id_bottom)}`;
-      b += `</div>`;
-      if (c.ship_name) b += `<span style="font-size:11px;color:var(--gold);background:rgba(212,168,67,.1);padding:2px 8px;border-radius:10px">${c.ship_name}</span>`;
-      if (c.note) b += `<span style="font-size:11px;color:var(--muted)">${c.note}</span>`;
-      b += `</div>`;
-    });
-    b += `</div></div>`;
   }
   // あらすじ
   if (d.synopsis && d.synopsis !== '?') b += `<div class="msec"><div class="mlab">📖 あらすじ</div><div class="mcont">${(d.synopsis||'').replace(/\n/g,'<br>')}</div></div>`;

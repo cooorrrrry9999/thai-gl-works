@@ -872,6 +872,10 @@ function _exposeToWindow() {
   window._S_SET            = (s) => { S = s; };
   window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; };
   window._GET_FILTER_PLT      = () => FILTER_PLT;
+  window._FILTER_PLT_TOGGLE  = (v) => { const i=FILTER_PLT.indexOf(v); if(i>=0)FILTER_PLT.splice(i,1); else FILTER_PLT.push(v); };
+  window._FILTER_VPN_TOGGLE  = (v) => { const i=FILTER_VPN.indexOf(v); if(i>=0)FILTER_VPN.splice(i,1); else FILTER_VPN.push(v); };
+  window._FILTER_SUB_TOGGLE  = (v) => { const i=FILTER_SUBTITLE.indexOf(v); if(i>=0)FILTER_SUBTITLE.splice(i,1); else FILTER_SUBTITLE.push(v); };
+  window._FILTER_ENV_RESET   = () => { FILTER_PLT.length=0; FILTER_VPN.length=0; FILTER_SUBTITLE.length=0; };
   window._GET_FILTER_STATUS   = () => FILTER_STATUS;
   window._GET_FILTER_STUDIO   = () => FILTER_STUDIO;
   window._GET_FILTER_YEAR     = () => FILTER_YEAR;
@@ -986,7 +990,7 @@ window.resetAllFilters = function() {
   });
   // 視聴環境ボタンをリセット
   updateEnvBtnLabel();
-  buildFilterDropdowns();
+  window.buildFilterDropdowns?.();
   renderFilterTags();
   render();
 };
@@ -3097,31 +3101,30 @@ window.updateSidebarState = function updateSidebarState() {
 
 /* ── 視聴環境パネル（配信・VPN・字幕を一括設定） ─────────────────────── */
 window.envToggle = function(type, val) {
-  const map = { plt: FILTER_PLT, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
-  const arr = map[type];
-  if (!arr) return;
-  const idx = arr.indexOf(val);
-  if (idx >= 0) arr.splice(idx, 1);
-  else arr.push(val);
+  // module内のFILTER配列をブリッジ経由で操作
+  if (type === 'plt')      window._FILTER_PLT_TOGGLE?.(val);
+  else if (type === 'vpn') window._FILTER_VPN_TOGGLE?.(val);
+  else                     window._FILTER_SUB_TOGGLE?.(val);
 
-  // チップのアクティブ状態を即時反映
-  buildFilterDropdowns();
-  // ボタンラベル更新
+  window.buildFilterDropdowns?.();
   updateEnvBtnLabel();
-  renderFilterTags();
-  render();
+  window.renderFilterTags?.();
+  window.render?.();
 };
 
 window.resetEnvFilter = function() {
-  FILTER_PLT=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[];
-  buildFilterDropdowns();
+  window._FILTER_ENV_RESET?.();
+  window.buildFilterDropdowns?.();
   updateEnvBtnLabel();
-  renderFilterTags();
-  render();
+  window.renderFilterTags?.();
+  window.render?.();
 };
 
 function updateEnvBtnLabel() {
-  const total = FILTER_PLT.length + FILTER_VPN.length + FILTER_SUBTITLE.length;
+  const plt = window._GET_FILTER_PLT?.() || [];
+  const vpn = window._GET_FILTER_VPN?.() || [];
+  const sub = window._GET_FILTER_SUBTITLE?.() || [];
+  const total = plt.length + vpn.length + sub.length;
   const btn = document.getElementById('fbtn-env');
   if (!btn) return;
   if (total > 0) {

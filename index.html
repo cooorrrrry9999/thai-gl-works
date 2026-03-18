@@ -1291,7 +1291,7 @@ function card(d, listMode) {
     ? Math.round(d.recommend * d.beginner_score * 10) / 10 : null;
   const coryRateHtml = (mode === 'cory')
     ? `<div class="card-rates-row">
-        ${coryPt ? `<span class="card-corypt">🌸 ${coryPt}<span style="font-size:9px;opacity:.7">/25</span></span>` : ''}
+        ${coryPt ? `<span class="card-corypt">🐶 ${coryPt}<span style="font-size:9px;opacity:.7">/25</span></span>` : ''}
         ${d.user_rate_avg ? `<span class="card-avgrate">👥 ★${d.user_rate_avg}<span class="urate-count">(${d.user_rate_count||0})</span></span>` : ''}
         ${ud.rate ? `<span class="card-myrate">⭐ ${ud.rate}</span>` : ''}
        </div>
@@ -2575,7 +2575,7 @@ textarea:focus{border-color:var(--lav);}
   <!-- ▼▼▼ サイドバー ▼▼▼ -->
   <nav class="sidebar-wrap" id="sidebar" aria-label="サイドナビゲーション">
     <div class="sb-header">
-      <div class="sb-logo-icon">🌸</div>
+      <div class="sb-logo-icon">🐶</div>
       <div>
         <div class="sb-logo-text">Cory's GL Guide</div>
         <div class="sb-logo-sub">タイGLレビューサイト</div>

@@ -872,10 +872,7 @@ function _exposeToWindow() {
   window._S_SET            = (s) => { S = s; };
   window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; };
   window._GET_FILTER_PLT      = () => FILTER_PLT;
-  window._FILTER_PLT_TOGGLE  = (v) => { const i=FILTER_PLT.indexOf(v); if(i>=0)FILTER_PLT.splice(i,1); else FILTER_PLT.push(v); };
-  window._FILTER_VPN_TOGGLE  = (v) => { const i=FILTER_VPN.indexOf(v); if(i>=0)FILTER_VPN.splice(i,1); else FILTER_VPN.push(v); };
-  window._FILTER_SUB_TOGGLE  = (v) => { const i=FILTER_SUBTITLE.indexOf(v); if(i>=0)FILTER_SUBTITLE.splice(i,1); else FILTER_SUBTITLE.push(v); };
-  window._FILTER_ENV_RESET   = () => { FILTER_PLT.length=0; FILTER_VPN.length=0; FILTER_SUBTITLE.length=0; };
+
   window._GET_FILTER_STATUS   = () => FILTER_STATUS;
   window._GET_FILTER_STUDIO   = () => FILTER_STUDIO;
   window._GET_FILTER_YEAR     = () => FILTER_YEAR;
@@ -939,9 +936,9 @@ window.toggleDropdown = function(id) {
   });
   document.getElementById(id)?.classList.toggle('open');
 };
-// ドロップダウン外クリックで閉じる（env-chip・env-panel内は閉じない）
+// ドロップダウン外クリックで閉じる
 document.addEventListener('click', e => {
-  if (e.target.closest('.env-chip') || e.target.closest('.env-panel')) return;
+  if (e.target.closest('.env-chip')) return;  // チップはmodule側で処理
   if (!e.target.closest('.multi-select-wrap')) {
     document.querySelectorAll('.multi-dropdown').forEach(el => el.classList.remove('open'));
   }
@@ -1611,11 +1608,60 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeMD(); });
 
 function updateHeroStats() {
   document.getElementById('sTotal').textContent = localDramas.length;
-  // 旧要素は削除済みだがエラー回避のためnullチェック
   const sRated = document.getElementById('sRated'); if(sRated) sRated.textContent = localDramas.filter(d=>d.rate>0).length;
   const sTop = document.getElementById('sTop'); if(sTop) sTop.textContent = localDramas.filter(d=>d.recommend>=5).length;
   const sUp = document.getElementById('sUpcoming'); if(sUp) sUp.textContent = localDramas.filter(d=>calcStatus(d)==='放送前').length;
 }
+
+// ── 視聴環境パネル（module内でFILTERを直接操作） ──────────────────────
+document.addEventListener('click', function(e) {
+  const chip = e.target.closest('.env-chip');
+  if (!chip) return;
+  const type = chip.dataset.type;
+  const val  = chip.dataset.val;
+  if (!type || !val) return;
+
+  // FILTER配列を直接操作（moduleスコープ内なので直接アクセス可）
+  if (type === 'plt') {
+    const i = FILTER_PLT.indexOf(val);
+    if (i >= 0) FILTER_PLT.splice(i, 1); else FILTER_PLT.push(val);
+  } else if (type === 'vpn') {
+    const i = FILTER_VPN.indexOf(val);
+    if (i >= 0) FILTER_VPN.splice(i, 1); else FILTER_VPN.push(val);
+  } else if (type === 'subtitle') {
+    const i = FILTER_SUBTITLE.indexOf(val);
+    if (i >= 0) FILTER_SUBTITLE.splice(i, 1); else FILTER_SUBTITLE.push(val);
+  }
+
+  // チップのactive状態を更新
+  document.querySelectorAll('.env-chip').forEach(b => {
+    const t = b.dataset.type, v = b.dataset.val;
+    if (!t || !v) return;
+    const active =
+      (t === 'plt'      && FILTER_PLT.includes(v)) ||
+      (t === 'vpn'      && FILTER_VPN.includes(v)) ||
+      (t === 'subtitle' && FILTER_SUBTITLE.includes(v));
+    b.classList.toggle('active', active);
+  });
+  // ボタンラベル更新
+  const total = FILTER_PLT.length + FILTER_VPN.length + FILTER_SUBTITLE.length;
+  const envBtn = document.getElementById('fbtn-env');
+  if (envBtn) {
+    envBtn.textContent = total > 0 ? `🎧 視聴環境 (${total}) ▾` : '🎧 視聴環境 ▾';
+    envBtn.classList.toggle('has-filter', total > 0);
+  }
+  renderFilterTags();
+  render();
+});
+
+window.resetEnvFilter = function() {
+  FILTER_PLT.length = 0; FILTER_VPN.length = 0; FILTER_SUBTITLE.length = 0;
+  document.querySelectorAll('.env-chip').forEach(b => b.classList.remove('active'));
+  const envBtn = document.getElementById('fbtn-env');
+  if (envBtn) { envBtn.textContent = '🎧 視聴環境 ▾'; envBtn.classList.remove('has-filter'); }
+  renderFilterTags();
+  render();
+};
 </script>
 
 <style>
@@ -2675,7 +2721,7 @@ textarea:focus{border-color:var(--lav);}
 
         <div class="env-divider"></div>
         <div style="padding:6px 10px">
-          <button class="reset-btn" style="width:100%;text-align:center" onclick="resetEnvFilter()">視聴環境をリセット</button>
+          <button class="reset-btn" style="width:100%;text-align:center" onclick="window.resetEnvFilter()">視聴環境をリセット</button>
         </div>
       </div>
     </div>
@@ -3098,72 +3144,7 @@ window.updateSidebarState = function updateSidebarState() {
 })();
 
 /* ── 視聴環境パネル（配信・VPN・字幕を一括設定） ─────────────────────── */
-// env-panel全体にイベント委譲（チップのonclick代わり）
-document.addEventListener('click', function(e) {
-  const chip = e.target.closest('.env-chip');
-  if (!chip) return;
-  const type = chip.dataset.type;
-  const val  = chip.dataset.val;
-  if (!type || !val) return;
-  e.stopPropagation();
-  window.envToggle(type, val);
-});
 
-window.envToggle = function(type, val) {
-  // module内のFILTER配列をブリッジ経由で操作
-  if (type === 'plt')      window._FILTER_PLT_TOGGLE?.(val);
-  else if (type === 'vpn') window._FILTER_VPN_TOGGLE?.(val);
-  else                     window._FILTER_SUB_TOGGLE?.(val);
-
-  // DOMを全再構築するとパネルが閉じてしまうので、チップのactive状態のみ更新
-  refreshEnvChips();
-  updateEnvBtnLabel();
-  window.renderFilterTags?.();
-  window.render?.();
-};
-
-// チップのactive状態だけを更新（DOM再構築しない）
-function refreshEnvChips() {
-  const plt = window._GET_FILTER_PLT?.() || [];
-  const vpn = window._GET_FILTER_VPN?.() || [];
-  const sub = window._GET_FILTER_SUBTITLE?.() || [];
-  // 配信チップ
-  document.querySelectorAll('#env-plt-chips .env-chip').forEach(btn => {
-    btn.classList.toggle('active', plt.includes(btn.dataset.val));
-  });
-  // VPNチップ
-  document.querySelectorAll('#env-vpn-chips .env-chip').forEach(btn => {
-    btn.classList.toggle('active', vpn.includes(btn.dataset.val));
-  });
-  // 字幕チップ
-  document.querySelectorAll('#env-sub-chips .env-chip').forEach(btn => {
-    btn.classList.toggle('active', sub.includes(btn.dataset.val));
-  });
-}
-
-window.resetEnvFilter = function() {
-  window._FILTER_ENV_RESET?.();
-  window.buildFilterDropdowns?.();
-  updateEnvBtnLabel();
-  window.renderFilterTags?.();
-  window.render?.();
-};
-
-function updateEnvBtnLabel() {
-  const plt = window._GET_FILTER_PLT?.() || [];
-  const vpn = window._GET_FILTER_VPN?.() || [];
-  const sub = window._GET_FILTER_SUBTITLE?.() || [];
-  const total = plt.length + vpn.length + sub.length;
-  const btn = document.getElementById('fbtn-env');
-  if (!btn) return;
-  if (total > 0) {
-    btn.textContent = '🎧 視聴環境 (' + total + ') ▾';
-    btn.classList.add('has-filter');
-  } else {
-    btn.textContent = '🎧 視聴環境 ▾';
-    btn.classList.remove('has-filter');
-  }
-}
 
 /* [END SECTION: SIDEBAR JS] */
 

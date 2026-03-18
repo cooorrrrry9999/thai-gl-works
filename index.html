@@ -1027,46 +1027,41 @@ function go() {
   //   同一フィルター内 → OR（例：配信でYoutube OR iQIYI）
   //   異なるフィルター間 → AND（例：配信フィルター AND VPNフィルター AND 字幕フィルター）
 
-  if (FILTER_PLT.length > 0) {
-    // 配信：platforms配列のいずれかがFILTER_PLTのいずれかに一致（OR）
+  // ── 配信・VPN・字幕フィルター ─────────────────────────────────────────
+  // 同一フィルター内：OR（Youtube OR Netflix）
+  // 異なるフィルター間：AND（Youtube AND VPN不要 AND 字幕完備）
+  // ※ 1つのplatformエントリが「配信・VPN・字幕」の条件を同時に満たす必要がある
+  const hasEnvFilter = FILTER_PLT.length > 0 || FILTER_VPN.length > 0 || FILTER_SUBTITLE.length > 0;
+  if (hasEnvFilter) {
     l = l.filter(d => {
-      const plats = d.platforms && d.platforms.length
-        ? d.platforms.map(p => p.platform)
-        : (d.platform||'').split(/[\/,、]/).map(s=>s.trim());
-      return FILTER_PLT.some(v => plats.some(p => p === v));
+      // platforms配列がある場合：各エントリに対してAND条件をチェック
+      if (d.platforms && d.platforms.length) {
+        return d.platforms.some(p => {
+          const pltOK = FILTER_PLT.length === 0 || FILTER_PLT.includes(p.platform || '');
+          const vpnOK = FILTER_VPN.length === 0 || FILTER_VPN.includes(p.vpn || '不要(日本)');
+          const subOK = FILTER_SUBTITLE.length === 0 || FILTER_SUBTITLE.includes(p.subtitle || '');
+          return pltOK && vpnOK && subOK;
+        });
+      }
+      // 旧データ（platforms配列なし）の互換処理
+      const plats = (d.platform||'').split(/[\/,、]/).map(s=>s.trim()).filter(Boolean);
+      const vpnVal = d.vpn === 'あり' ? '要(日本以外)' : '不要(日本)';
+      const subVal = d.subtitle || '';
+      const pltOK = FILTER_PLT.length === 0 || FILTER_PLT.some(v => plats.includes(v));
+      const vpnOK = FILTER_VPN.length === 0 || FILTER_VPN.includes(vpnVal);
+      const subOK = FILTER_SUBTITLE.length === 0 || FILTER_SUBTITLE.includes(subVal);
+      return pltOK && vpnOK && subOK;
     });
   }
+
   if (FILTER_STATUS.length > 0) {
-    // 放送Status：OR
     l = l.filter(d => FILTER_STATUS.some(v => v === calcStatus(d)));
   }
   if (FILTER_STUDIO.length > 0) {
-    // 制作会社：OR
     l = l.filter(d => FILTER_STUDIO.some(v => v === (d.studio||'')));
   }
   if (FILTER_YEAR.length > 0) {
-    // 放送年：OR
     l = l.filter(d => FILTER_YEAR.some(v => v === (d.year||'未定')));
-  }
-  if (FILTER_VPN.length > 0) {
-    // VPN：platformsのいずれかがFILTER_VPNのいずれかに一致（OR）
-    // ただし他フィルターとはAND（l.filterをチェーンしているので自動的にAND）
-    l = l.filter(d => {
-      const vpns = d.platforms && d.platforms.length
-        ? d.platforms.map(p => p.vpn || '不要(日本)')
-        : [(d.vpn === 'あり' ? '要(日本以外)' : '不要(日本)')];
-      return FILTER_VPN.some(v => vpns.some(pv => pv === v));
-    });
-  }
-  if (FILTER_SUBTITLE.length > 0) {
-    // 字幕：platformsのいずれかがFILTER_SUBTITLEのいずれかに一致（OR）
-    // ただし他フィルターとはAND
-    l = l.filter(d => {
-      const subs = d.platforms && d.platforms.length
-        ? d.platforms.map(p => p.subtitle || '')
-        : [(d.subtitle || '')];
-      return FILTER_SUBTITLE.some(v => subs.some(s => s === v));
-    });
   }
 
   if (Q) {

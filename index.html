@@ -939,9 +939,9 @@ window.toggleDropdown = function(id) {
   });
   document.getElementById(id)?.classList.toggle('open');
 };
-// ドロップダウン外クリックで閉じる
+// ドロップダウン外クリックで閉じる（env-panelのチップクリックは閉じない）
 document.addEventListener('click', e => {
-  if (!e.target.closest('.multi-select-wrap')) {
+  if (!e.target.closest('.multi-select-wrap') && !e.target.closest('.env-panel')) {
     document.querySelectorAll('.multi-dropdown').forEach(el => el.classList.remove('open'));
   }
 });
@@ -1136,7 +1136,7 @@ function buildFilterDropdowns() {
   if (pltChips) {
     pltChips.innerHTML = platItems.map((v,i) =>
       `<button class="env-chip${FILTER_PLT.includes(v)?' active':''}"
-         onclick="envToggle('plt','${v}')" id="ec-plt-${i}">${v}</button>`
+         data-val="${v}" onclick="envToggle('plt','${v}')">${v}</button>`
     ).join('');
   }
   // VPN・字幕チップのアクティブ状態を同期
@@ -2656,8 +2656,8 @@ textarea:focus{border-color:var(--lav);}
         <div class="env-section">
           <div class="env-sec-label">🔒 VPN</div>
           <div class="env-chips" id="env-vpn-chips">
-            <button class="env-chip" onclick="envToggle('vpn','不要(日本)')" id="ec-vpn-0">不要（日本）</button>
-            <button class="env-chip" onclick="envToggle('vpn','要(日本以外)')" id="ec-vpn-1">要（日本以外）</button>
+            <button class="env-chip" data-val="不要(日本)" onclick="envToggle('vpn','不要(日本)')">不要（日本）</button>
+            <button class="env-chip" data-val="要(日本以外)" onclick="envToggle('vpn','要(日本以外)')">要（日本以外）</button>
           </div>
         </div>
 
@@ -2667,11 +2667,11 @@ textarea:focus{border-color:var(--lav);}
         <div class="env-section">
           <div class="env-sec-label">💬 字幕</div>
           <div class="env-chips" id="env-sub-chips">
-            <button class="env-chip" onclick="envToggle('subtitle','完備')" id="ec-sub-0">完備</button>
-            <button class="env-chip" onclick="envToggle('subtitle','fan sub')" id="ec-sub-1">fan sub</button>
-            <button class="env-chip" onclick="envToggle('subtitle','自動翻訳')" id="ec-sub-2">自動翻訳</button>
-            <button class="env-chip" onclick="envToggle('subtitle','英字幕のみ')" id="ec-sub-3">英字幕のみ</button>
-            <button class="env-chip" onclick="envToggle('subtitle','なし')" id="ec-sub-4">なし</button>
+            <button class="env-chip" data-val="完備" onclick="envToggle('subtitle','完備')">完備</button>
+            <button class="env-chip" data-val="fan sub" onclick="envToggle('subtitle','fan sub')">fan sub</button>
+            <button class="env-chip" data-val="自動翻訳" onclick="envToggle('subtitle','自動翻訳')">自動翻訳</button>
+            <button class="env-chip" data-val="英字幕のみ" onclick="envToggle('subtitle','英字幕のみ')">英字幕のみ</button>
+            <button class="env-chip" data-val="なし" onclick="envToggle('subtitle','なし')">なし</button>
           </div>
         </div>
 
@@ -3106,11 +3106,31 @@ window.envToggle = function(type, val) {
   else if (type === 'vpn') window._FILTER_VPN_TOGGLE?.(val);
   else                     window._FILTER_SUB_TOGGLE?.(val);
 
-  window.buildFilterDropdowns?.();
+  // DOMを全再構築するとパネルが閉じてしまうので、チップのactive状態のみ更新
+  refreshEnvChips();
   updateEnvBtnLabel();
   window.renderFilterTags?.();
   window.render?.();
 };
+
+// チップのactive状態だけを更新（DOM再構築しない）
+function refreshEnvChips() {
+  const plt = window._GET_FILTER_PLT?.() || [];
+  const vpn = window._GET_FILTER_VPN?.() || [];
+  const sub = window._GET_FILTER_SUBTITLE?.() || [];
+  // 配信チップ
+  document.querySelectorAll('#env-plt-chips .env-chip').forEach(btn => {
+    btn.classList.toggle('active', plt.includes(btn.dataset.val));
+  });
+  // VPNチップ
+  document.querySelectorAll('#env-vpn-chips .env-chip').forEach(btn => {
+    btn.classList.toggle('active', vpn.includes(btn.dataset.val));
+  });
+  // 字幕チップ
+  document.querySelectorAll('#env-sub-chips .env-chip').forEach(btn => {
+    btn.classList.toggle('active', sub.includes(btn.dataset.val));
+  });
+}
 
 window.resetEnvFilter = function() {
   window._FILTER_ENV_RESET?.();

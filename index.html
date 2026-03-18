@@ -596,6 +596,44 @@ window.toggleOriginalFields = function() {
   document.getElementById('original_fields').style.display = has ? '' : 'none';
 };
 
+// ── 日付入力の自動補正 ────────────────────────────────────────────────
+// 例: 2026-45 → 2026-04-05 / 2026-4-5 → 2026-04-05 / 20260405 → 2026-04-05
+window.fixDateInput = function(val) {
+  if (!val) return val;
+  const v = val.trim();
+  if (!v || v === '未定' || v === '?' || v === '？') return v;
+  const nums = v.replace(/[^0-9]/g, '');
+  if (!nums) return v;
+  // 8桁以上: yyyymmdd
+  if (nums.length >= 8) {
+    const y = nums.slice(0,4), m = nums.slice(4,6), d = nums.slice(6,8);
+    return y + '-' + m.padStart(2,'0') + '-' + d.padStart(2,'0');
+  }
+  const parts = v.split('-').map(p => p.trim()).filter(Boolean);
+  if (parts.length === 1) return parts[0].padStart(4,'0');
+  if (parts.length === 2) {
+    const y = parts[0].padStart(4,'0');
+    const second = parts[1];
+    // 月として不正(13以上 or 3桁以上) → mmdd として分解
+    if (second.length >= 3 || (second.length === 2 && parseInt(second,10) > 12)) {
+      const m = (second.length <= 2 ? second.slice(0,1) : second.slice(0,2)).padStart(2,'0');
+      const d = (second.length <= 2 ? second.slice(1)   : second.slice(2)).padStart(2,'0');
+      return y + '-' + m + '-' + d;
+    }
+    return y + '-' + second.padStart(2,'0');
+  }
+  // 3パーツ以上: yyyy-m-d → yyyy-mm-dd
+  return parts[0].padStart(4,'0') + '-' + parts[1].padStart(2,'0') + '-' + parts[2].padStart(2,'0');
+};
+window.autoFixDate = function(inputEl) {
+  const fixed = fixDateInput(inputEl.value);
+  if (fixed !== inputEl.value) {
+    inputEl.value = fixed;
+    inputEl.style.borderColor = 'var(--gold)';
+    setTimeout(() => { inputEl.style.borderColor = ''; }, 1000);
+  }
+};
+
 window.closeAdminModal = () => document.getElementById('adminModal').classList.remove('open');
 
 window.submitAdminForm = async () => {
@@ -603,8 +641,13 @@ window.submitAdminForm = async () => {
   const id = document.getElementById('adminDramaId').value.trim();
   const get = k => (document.getElementById('af_'+k)||{}).value?.trim() || '';
 
-  const release_start = get('release_start');
-  const release_end   = get('release_end');
+  const release_start = fixDateInput(get('release_start'));
+  const release_end   = fixDateInput(get('release_end'));
+  // 補正値をフォームに反映
+  const _rs = document.getElementById('af_release_start');
+  const _re = document.getElementById('af_release_end');
+  if (_rs && release_start) _rs.value = release_start;
+  if (_re && release_end)   _re.value = release_end;
 
   const data = {
     title:          get('title'),
@@ -2449,11 +2492,11 @@ textarea:focus{border-color:var(--lav);}
           </div>
           <div class="form-group">
             <label>放送開始日</label>
-            <input type="text" id="af_release_start" placeholder="2025-08-22　月のみ: 2025-08-01　未定: 未定">
+            <input type="text" id="af_release_start" placeholder="2025-08-22　月のみ: 2025-08-01　未定: 未定" onblur="autoFixDate(this)">
           </div>
           <div class="form-group">
             <label>放送終了日</label>
-            <input type="text" id="af_release_end" placeholder="2025-10-31（放送中は空欄OK）">
+            <input type="text" id="af_release_end" placeholder="2025-10-31（放送中は空欄OK）" onblur="autoFixDate(this)">
           </div>
           <div class="form-group"><label>制作会社</label><input type="text" id="af_studio"></div>
           <div class="form-group">

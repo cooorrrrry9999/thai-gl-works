@@ -1259,8 +1259,7 @@ function renderModal(id) {
   if (mimg) { mimg.src = d.image_url||''; mimg.style.display = d.image_url ? 'block' : 'none'; }
   // タイトル横共有アイコンのデータ更新
   const shareUrl = location.origin + location.pathname + '?drama=' + encodeURIComponent(id);
-  const shareText = encodeURIComponent(d.title + (cp ? ' / ' + cp : '') + ' | Cory's GL Guide
-');
+  const shareText = encodeURIComponent(d.title + (cp ? ' / ' + cp : '') + " | Cory's GL Guide");
   const mShareXUrl = 'https://x.com/intent/tweet?text=' + shareText + '&url=' + encodeURIComponent(shareUrl);
   const mShareLineUrl = 'https://social-plugins.line.me/lineit/share?url=' + encodeURIComponent(shareUrl);
   const _si = document.getElementById('modal-share-icon');

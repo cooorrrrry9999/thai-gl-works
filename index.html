@@ -910,7 +910,7 @@ function showToast(msg, type='ok') {
 }
 
 // ── FILTER / SORT STATE ────────────────────────────────────────────────
-let V='g', F='a', Q='', S='new', Y='all', STATUS_F=''; // Y/STATUS_Fは後方互換用
+let V='g', F='a', Q='', S='urate', Y='all', STATUS_F=''; // Y/STATUS_Fは後方互換用
 // カード表示モード: 'search'=作品を探す / 'mylist'=マイリスト / 'cory'=Coryの視聴リスト
 let CARD_MODE = 'search';
 // 複数選択フィルター（配列）
@@ -984,6 +984,10 @@ window.resetAllFilters = function() {
     updateFilterBtnLabel(t);
     document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
   });
+  // プリセットボタンをリセット
+  const pbtn = document.getElementById('fbtn-preset');
+  if (pbtn) { pbtn.textContent = '🎧 視聴環境 ▾'; pbtn.classList.remove('has-filter'); }
+  document.querySelectorAll('.dd-preset-item').forEach(el => el.classList.remove('active'));
   renderFilterTags();
   render();
 };
@@ -1113,25 +1117,64 @@ function buildFilterDropdowns() {
       <span>${v}</span>
     </label>`).join('');
 
-  const platItems = ['Youtube','Netflix','iQIYI','WeTV','Telasa','GagaOOLala','楽天','FOD','DMM','ch3','その他'];
+  // 配信：PLATFORM_OPTIONSを使って動的生成（Firestoreの設定値と一致）
+  const platItems = PLATFORM_OPTIONS;
   const statusItems = ['放送済み','放送中','放送前'];
+  const vpnItems = ['不要(日本)', '要(日本以外)'];
 
   const ddPlt    = document.getElementById('dd-plt');
   const ddStatus = document.getElementById('dd-status');
-  const ddStudio = document.getElementById('dd-studio');
   const ddYear   = document.getElementById('dd-year');
-
-  const vpnItems = ['不要(日本)', '要(日本以外)'];
-  const ddVpn      = document.getElementById('dd-vpn');
+  const ddVpn    = document.getElementById('dd-vpn');
   const ddSubtitle = document.getElementById('dd-subtitle');
 
   if (ddPlt)      ddPlt.innerHTML      = makeItems('plt', platItems);
   if (ddStatus)   ddStatus.innerHTML   = makeItems('status', statusItems);
-  if (ddStudio)   ddStudio.innerHTML   = makeItems('studio', studios);
   if (ddYear)     ddYear.innerHTML     = makeItems('year', years);
   if (ddVpn)      ddVpn.innerHTML      = makeItems('vpn', vpnItems);
   if (ddSubtitle) ddSubtitle.innerHTML = makeItems('subtitle', SUBTITLE_OPTIONS);
+
+  // 制作会社：インクリメンタルサーチ型で描画
+  buildStudioFilter(studios);
 }
+
+function buildStudioFilter(studios) {
+  const ddStudio = document.getElementById('dd-studio');
+  if (!ddStudio) return;
+  ddStudio.innerHTML = `
+    <div style="padding:5px 8px 4px">
+      <input type="text" id="studio-search" placeholder="🔍 制作会社を検索..."
+        oninput="filterStudioItems(this.value)"
+        autocomplete="off"
+        style="width:100%;background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+          border-radius:7px;padding:5px 9px;color:var(--text);font-family:inherit;font-size:12px;outline:none;">
+    </div>
+    <div id="studio-items">
+      ${studios.map(v => `
+        <label class="dd-item">
+          <input type="checkbox" value="${v}"
+            ${FILTER_STUDIO.includes(v)?'checked':''}
+            onchange="onFilterChange('studio','${v}',this.checked)">
+          <span>${v}</span>
+        </label>`).join('')}
+    </div>`;
+}
+
+window.filterStudioItems = function(q) {
+  const items = document.getElementById('studio-items');
+  if (!items) return;
+  const studios = [...new Set(localDramas.map(d=>d.studio||'').filter(Boolean))].sort();
+  const filtered = q.trim()
+    ? studios.filter(v => v.toLowerCase().includes(q.toLowerCase()))
+    : studios;
+  items.innerHTML = filtered.map(v => `
+    <label class="dd-item">
+      <input type="checkbox" value="${v}"
+        ${FILTER_STUDIO.includes(v)?'checked':''}
+        onchange="onFilterChange('studio','${v}',this.checked)">
+      <span>${v}</span>
+    </label>`).join('') || '<div style="padding:6px 12px;font-size:12px;color:var(--muted)">見つかりません</div>';
+};
 
 function strs(n, mx=5) { let h=''; for(let i=1;i<=mx;i++) h+=`<span class="star${i<=n?' on':''}">${i<=n?'★':'☆'}</span>`; return h; }
 
@@ -1996,6 +2039,25 @@ textarea:focus{border-color:var(--lav);}
   font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
 .reset-btn:hover{border-color:rgba(155,126,200,.4);color:var(--muted);}
 
+/* 視聴環境プリセット */
+.preset-btn{border-color:rgba(155,126,200,.35);}
+.dd-preset-item{
+  display:flex;align-items:center;width:100%;padding:7px 12px;
+  background:none;border:none;border-radius:7px;
+  color:var(--muted);font-size:13px;font-family:'Noto Sans JP',sans-serif;
+  cursor:pointer;text-align:left;transition:background .15s,color .15s;
+}
+.dd-preset-item:hover{background:rgba(155,126,200,.12);color:var(--text);}
+.dd-preset-item.active{background:rgba(155,126,200,.18);color:var(--ll);font-weight:600;}
+.dd-detail-btn{
+  background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);
+  border-radius:7px;padding:4px 10px;color:var(--muted);cursor:pointer;
+  font-size:11px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;
+}
+.dd-detail-btn:hover{background:rgba(155,126,200,.18);color:var(--text);}
+/* 制作会社サーチの検索窓フォーカス */
+#studio-search:focus{border-color:rgba(155,126,200,.5);}
+
 /* ── モーダル タイトル横 共有アイコン ─────────────── */
 .mshare-wrap{
   position:relative;flex-shrink:0;margin-top:3px;margin-right:36px;
@@ -2540,7 +2602,7 @@ textarea:focus{border-color:var(--lav);}
     <!-- 並び替え -->
     <select id="srt">
       <option value="new">新しい順</option>
-      <option value="urate">みんなの評価が高い順</option>
+      <option value="urate" selected>みんなの評価が高い順</option>
       <option value="myrate">自分の評価が高い順</option>
       <option value="rec">Coryのおすすめ順</option>
       <option value="short">短い順</option>
@@ -2557,35 +2619,44 @@ textarea:focus{border-color:var(--lav);}
   </div>
   <!-- フィルター行 -->
   <div class="filter-row">
-    <!-- 配信媒体 -->
+    <!-- 視聴環境プリセット -->
     <div class="multi-select-wrap">
-      <button class="filter-btn" id="fbtn-plt" onclick="toggleDropdown('dd-plt')">配信 ▾</button>
-      <div class="multi-dropdown" id="dd-plt"></div>
+      <button class="filter-btn preset-btn" id="fbtn-preset" onclick="toggleDropdown('dd-preset')">🎧 視聴環境 ▾</button>
+      <div class="multi-dropdown" id="dd-preset" style="min-width:200px">
+        <div style="padding:5px 10px 3px;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em">ワンタッチで条件をセット</div>
+        <button class="dd-preset-item" onclick="applyPreset('jp_novpn')">🇯🇵 日本・VPN不要</button>
+        <button class="dd-preset-item" onclick="applyPreset('vpn')">🌐 VPNあり環境</button>
+        <button class="dd-preset-item" onclick="applyPreset('ja_sub')">📝 日本語字幕あり</button>
+        <button class="dd-preset-item" onclick="applyPreset('free')">🆓 無料で見られる</button>
+        <hr style="border:none;border-top:1px solid rgba(155,126,200,.1);margin:4px 0">
+        <div style="padding:3px 10px 5px;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em">個別設定</div>
+        <div style="display:flex;gap:4px;padding:3px 8px 6px;flex-wrap:wrap">
+          <button class="dd-detail-btn" onclick="toggleDropdown('dd-plt');document.getElementById('dd-preset').classList.remove('open')">配信 ▾</button>
+          <button class="dd-detail-btn" onclick="toggleDropdown('dd-vpn');document.getElementById('dd-preset').classList.remove('open')">VPN ▾</button>
+          <button class="dd-detail-btn" onclick="toggleDropdown('dd-subtitle');document.getElementById('dd-preset').classList.remove('open')">字幕 ▾</button>
+        </div>
+      </div>
+    </div>
+    <!-- 個別フィルター（非表示ドロップダウン・プリセットボタンから呼ぶ） -->
+    <div style="position:relative;width:0;height:0;overflow:visible">
+      <div class="multi-dropdown" id="dd-plt" style="top:8px;left:0"></div>
+      <div class="multi-dropdown" id="dd-vpn" style="top:8px;left:0"></div>
+      <div class="multi-dropdown" id="dd-subtitle" style="top:8px;left:0"></div>
     </div>
     <!-- 放送ステータス -->
     <div class="multi-select-wrap">
       <button class="filter-btn" id="fbtn-status" onclick="toggleDropdown('dd-status')">放送Status ▾</button>
       <div class="multi-dropdown" id="dd-status"></div>
     </div>
-    <!-- 制作会社 -->
+    <!-- 制作会社（インクリメンタルサーチ） -->
     <div class="multi-select-wrap">
       <button class="filter-btn" id="fbtn-studio" onclick="toggleDropdown('dd-studio')">制作会社 ▾</button>
-      <div class="multi-dropdown" id="dd-studio"></div>
+      <div class="multi-dropdown" id="dd-studio" style="min-width:180px"></div>
     </div>
     <!-- 放送年 -->
     <div class="multi-select-wrap">
       <button class="filter-btn" id="fbtn-year" onclick="toggleDropdown('dd-year')">放送年 ▾</button>
       <div class="multi-dropdown" id="dd-year"></div>
-    </div>
-    <!-- VPN -->
-    <div class="multi-select-wrap">
-      <button class="filter-btn" id="fbtn-vpn" onclick="toggleDropdown('dd-vpn')">VPN ▾</button>
-      <div class="multi-dropdown" id="dd-vpn"></div>
-    </div>
-    <!-- 字幕 -->
-    <div class="multi-select-wrap">
-      <button class="filter-btn" id="fbtn-subtitle" onclick="toggleDropdown('dd-subtitle')">字幕 ▾</button>
-      <div class="multi-dropdown" id="dd-subtitle"></div>
     </div>
     <!-- 選択中タグ & リセット -->
     <div id="filter-tags"></div>
@@ -2896,11 +2967,11 @@ window.sbNav = function(key) {
     window._CARD_MODE_SET?.('search');
     window._FILTER_RESET?.();
     window._F_SET?.('a');
-    window._S_SET?.('new');
+    window._S_SET?.('urate');
     const srtEl = document.getElementById('srt');
-    if (srtEl) srtEl.value = 'new';
+    if (srtEl) srtEl.value = 'urate';
     window.renderFilterTags?.();
-    ['plt','status','studio','year'].forEach(t => window.updateFilterBtnLabel?.(t));
+    ['plt','status','studio','year','vpn','subtitle'].forEach(t => window.updateFilterBtnLabel?.(t));
     window.render?.();
   }
 
@@ -2989,6 +3060,50 @@ window.updateSidebarState = function updateSidebarState() {
     }
   } catch(e) {}
 })();
+
+/* ── 視聴環境プリセット ──────────────────────────────────────────────── */
+window.applyPreset = function(preset) {
+  // リセットしてからセット
+  FILTER_PLT=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[];
+  document.getElementById('dd-preset')?.classList.remove('open');
+
+  if (preset === 'jp_novpn') {
+    FILTER_VPN = ['不要(日本)'];
+  } else if (preset === 'vpn') {
+    FILTER_VPN = ['要(日本以外)'];
+  } else if (preset === 'ja_sub') {
+    FILTER_SUBTITLE = ['完備', 'fan sub'];
+  } else if (preset === 'free') {
+    // 無料配信の媒体で絞る（Youtube / ch3）
+    FILTER_PLT = ['Youtube', 'ch3'];
+  }
+
+  // チェックボックスの状態を同期
+  ['plt','vpn','subtitle'].forEach(type => {
+    const map = {plt:FILTER_PLT, vpn:FILTER_VPN, subtitle:FILTER_SUBTITLE};
+    document.querySelectorAll(`#dd-${type} input[type=checkbox]`).forEach(el => {
+      el.checked = map[type].includes(el.value);
+    });
+    window.updateFilterBtnLabel?.(type);
+  });
+
+  // プリセットボタンのアクティブ表示
+  document.querySelectorAll('.dd-preset-item').forEach(el => el.classList.remove('active'));
+  event?.currentTarget?.classList.add('active');
+  // プリセットボタンラベル更新
+  const presetLabels = {
+    jp_novpn:'🇯🇵 日本・VPN不要', vpn:'🌐 VPNあり環境',
+    ja_sub:'📝 日本語字幕あり', free:'🆓 無料配信'
+  };
+  const pbtn = document.getElementById('fbtn-preset');
+  if (pbtn) {
+    pbtn.textContent = (presetLabels[preset] || '🎧 視聴環境') + ' ✕';
+    pbtn.classList.add('has-filter');
+  }
+
+  window.renderFilterTags?.();
+  window.render?.();
+};
 
 /* [END SECTION: SIDEBAR JS] */
 

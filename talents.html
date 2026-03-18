@@ -33,6 +33,7 @@ let talents = [];   // Firestore talents コレクション（俳優1人=1件）
 let dramas  = [];   // Firestore dramas コレクション（出演作品連携用）
 let editingId = null;
 let searchQ = '';
+let sortQ = 'alpha'; // alpha / age_young / age_old / works
 
 // ── Auth ───────────────────────────────────────────────────────────────
 window.loginWithGoogle = async () => {
@@ -106,7 +107,7 @@ function formatBirthday(birthday) {
 // talent_id が未設定の作品は出演作品に表示しない（「未紹介」として扱う）
 function getAppearances(talentId) {
   if (!talentId) return [];
-  return dramas.filter(d => {
+  const list = dramas.filter(d => {
     if (d.cps && d.cps.length) {
       return d.cps.some(cp =>
         cp.talent_id_top === talentId || cp.talent_id_bottom === talentId
@@ -114,6 +115,8 @@ function getAppearances(talentId) {
     }
     return false;
   });
+  // 新しい順（release_startが新しい順）
+  return list.sort((a, b) => (b.release_start || b.release || '0000').localeCompare(a.release_start || a.release || '0000'));
 }
 
 // ── Render ─────────────────────────────────────────────────────────────
@@ -126,6 +129,21 @@ function filtered() {
       (t.nickname_kana  || '').includes(q) ||
       (t.real_name || '').toLowerCase().includes(q)
     );
+  }
+  // ソート
+  if (sortQ === 'alpha') {
+    l.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
+  } else if (sortQ === 'age_young' || sortQ === 'age_old') {
+    l.sort((a, b) => {
+      const da = a.birthday ? new Date(a.birthday) : null;
+      const db = b.birthday ? new Date(b.birthday) : null;
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return sortQ === 'age_young' ? db - da : da - db; // young=誕生日新しい順 / old=古い順
+    });
+  } else if (sortQ === 'works') {
+    l.sort((a, b) => getAppearances(b._id).length - getAppearances(a._id).length);
   }
   return l;
 }
@@ -429,6 +447,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('searchInput').addEventListener('input', e => {
     searchQ = e.target.value; render();
   });
+  const sortEl = document.getElementById('talentSort');
+  if (sortEl) sortEl.addEventListener('change', e => { sortQ = e.target.value; render(); });
 
   // 花びら
   const c = document.getElementById('petals');
@@ -833,9 +853,15 @@ select option{background:var(--dark2);}
     <div class="controls">
       <div class="ctrl-row">
         <div class="srch">
-          <input type="text" id="searchInput" placeholder="チューレン・本名で検索...">
+          <input type="text" id="searchInput" placeholder="チューレン・本名・読み仮名で検索...">
         </div>
-
+        <select id="talentSort" onchange="sortQ=this.value;render()"
+          style="background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);border-radius:8px;padding:6px 10px;color:var(--muted);font-family:inherit;font-size:12px;outline:none;">
+          <option value="alpha">ニックネーム順</option>
+          <option value="age_young">年齢順（若い順）</option>
+          <option value="age_old">年齢順（年上順）</option>
+          <option value="works">出演作品数順</option>
+        </select>
         <div class="cnt" id="cnt">─ 名</div>
         <button class="add-btn admin-only" style="display:none" onclick="openAdd()">＋ タレントを追加</button>
       </div>

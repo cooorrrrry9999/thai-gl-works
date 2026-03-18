@@ -870,7 +870,9 @@ function _exposeToWindow() {
   window._CARD_MODE_SET    = (m) => { CARD_MODE = m; };
   window._F_SET            = (f) => { F = f; };
   window._S_SET            = (s) => { S = s; };
-  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; };
+  window._FILTER_RESET     = () => { FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; FILTER_USER_STATUS=[]; FILTER_CORY_STATUS=[]; };
+  window._GET_FILTER_USER_STATUS = () => FILTER_USER_STATUS;
+  window._GET_FILTER_CORY_STATUS = () => FILTER_CORY_STATUS;
   window._GET_FILTER_PLT      = () => FILTER_PLT;
 
   window._GET_FILTER_STATUS   = () => FILTER_STATUS;
@@ -915,12 +917,14 @@ let V='g', F='a', Q='', S='urate', Y='all', STATUS_F=''; // Y/STATUS_Fは後方�
 // カード表示モード: 'search'=作品を探す / 'mylist'=マイリスト / 'cory'=Coryの視聴リスト
 let CARD_MODE = 'search';
 // 複数選択フィルター（配列）
-let FILTER_PLT    = [];  // 配信媒体
-let FILTER_STATUS = [];  // 放送ステータス
-let FILTER_STUDIO = [];  // 制作会社
-let FILTER_YEAR   = [];  // 放送年
-let FILTER_VPN      = [];  // VPN
-let FILTER_SUBTITLE = [];  // 字幕
+let FILTER_PLT          = [];  // 配信媒体
+let FILTER_STATUS       = [];  // 放送ステータス
+let FILTER_STUDIO       = [];  // 制作会社
+let FILTER_YEAR         = [];  // 放送年
+let FILTER_VPN          = [];  // VPN
+let FILTER_SUBTITLE     = [];  // 字幕
+let FILTER_USER_STATUS  = [];  // ユーザー視聴Status
+let FILTER_CORY_STATUS  = [];  // Coryの視聴Status
 let openModalId = null;
 
 window.setView = v => {
@@ -945,7 +949,7 @@ document.addEventListener('click', e => {
 });
 // チェックボックスの変更
 window.onFilterChange = function(type, val, checked) {
-  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE, ustatus: FILTER_USER_STATUS, cstatus: FILTER_CORY_STATUS };
   const arr = map[type];
   if (checked) { if (!arr.includes(val)) arr.push(val); }
   else { const i = arr.indexOf(val); if (i>=0) arr.splice(i,1); }
@@ -955,8 +959,8 @@ window.onFilterChange = function(type, val, checked) {
 };
 // ボタンラベルを選択数に応じて更新
 function updateFilterBtnLabel(type) {
-  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE };
-  const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年', vpn:'VPN', subtitle:'字幕' };
+  const map = { plt: FILTER_PLT, status: FILTER_STATUS, studio: FILTER_STUDIO, year: FILTER_YEAR, vpn: FILTER_VPN, subtitle: FILTER_SUBTITLE, ustatus: FILTER_USER_STATUS, cstatus: FILTER_CORY_STATUS };
+  const labels = { plt:'配信', status:'放送Status', studio:'制作会社', year:'放送年', vpn:'VPN', subtitle:'字幕', ustatus:'視聴Status', cstatus:'Coryの状況' };
   const arr = map[type];
   const btn = document.getElementById('fbtn-' + type);
   if (!btn) return;
@@ -974,6 +978,8 @@ function renderFilterTags() {
     ...FILTER_YEAR.map(v => ({type:'year', val:v})),
     ...FILTER_VPN.map(v => ({type:'vpn', val:v})),
     ...FILTER_SUBTITLE.map(v => ({type:'subtitle', val:v})),
+    ...FILTER_USER_STATUS.map(v => ({type:'ustatus', val:v})),
+    ...FILTER_CORY_STATUS.map(v => ({type:'cstatus', val:v})),
   ];
   wrap.innerHTML = all.map(({type, val}) =>
     `<span class="ftag" onclick="onFilterChange('${type}','${val}',false)">${val} ✕</span>`
@@ -981,8 +987,8 @@ function renderFilterTags() {
 }
 // フィルターを全リセット
 window.resetAllFilters = function() {
-  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[];
-  ['plt','status','studio','year','vpn','subtitle'].forEach(t => {
+  FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; FILTER_USER_STATUS=[]; FILTER_CORY_STATUS=[];
+  ['plt','status','studio','year','vpn','subtitle','ustatus','cstatus'].forEach(t => {
     updateFilterBtnLabel(t);
     document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
   });
@@ -1057,6 +1063,12 @@ function go() {
   if (FILTER_STATUS.length > 0) {
     l = l.filter(d => FILTER_STATUS.some(v => v === calcStatus(d)));
   }
+  if (FILTER_USER_STATUS.length > 0) {
+    l = l.filter(d => FILTER_USER_STATUS.some(v => v === (userDoc.dramas?.[String(d._id||d.title)]?.status || '未視聴')));
+  }
+  if (FILTER_CORY_STATUS.length > 0) {
+    l = l.filter(d => FILTER_CORY_STATUS.some(v => v === (d.cory_status || '未視聴')));
+  }
   if (FILTER_STUDIO.length > 0) {
     l = l.filter(d => FILTER_STUDIO.some(v => v === (d.studio||'')));
   }
@@ -1124,6 +1136,29 @@ function buildFilterDropdowns() {
   if (ddStatus)   ddStatus.innerHTML   = makeItems('status', statusItems);
   if (ddYear)     ddYear.innerHTML     = makeItems('year', years);
 
+  // 視聴Statusフィルター（モード別に動的生成）
+  const ddUstatus = document.getElementById('dd-ustatus');
+  if (ddUstatus) {
+    const makeItems2 = (type, items) => items.map(v => `
+      <label class="dd-item">
+        <input type="checkbox" value="${v}"
+          ${(type==='ustatus'?FILTER_USER_STATUS:FILTER_CORY_STATUS).includes(v)?'checked':''}
+          onchange="onFilterChange('${type}','${v}',this.checked)">
+        <span>${v}</span>
+      </label>`).join('');
+    ddUstatus.innerHTML = makeItems2('ustatus', WATCH_STATUS);
+  }
+  const ddCstatus = document.getElementById('dd-cstatus');
+  if (ddCstatus) {
+    const makeItems3 = (type, items) => items.map(v => `
+      <label class="dd-item">
+        <input type="checkbox" value="${v}"
+          ${FILTER_CORY_STATUS.includes(v)?'checked':''}
+          onchange="onFilterChange('${type}','${v}',this.checked)">
+        <span>${v}</span>
+      </label>`).join('');
+    ddCstatus.innerHTML = makeItems3('cstatus', ['未視聴','視聴中','視聴済み','Drop out']);
+  }
   // 配信：env-panelの中にチップ形式で描画（createElement使用でonclickが壊れない）
   const pltChips = document.getElementById('env-plt-chips');
   if (pltChips) {
@@ -1236,21 +1271,31 @@ function card(d, listMode) {
 
   // ── モード別の追加表示 ────────────────────────────────────────────────
   // ユーザー平均評価（作品を探す・マイリストで表示）
-  const userAvgHtml = ((mode === 'search' || mode === 'mylist') && d.user_rate_avg)
+  const userAvgHtml = (mode === 'search' && d.user_rate_avg)
     ? `<div class="user-avg-rate">👥 ★${d.user_rate_avg} <span class="urate-count">(${d.user_rate_count || 0}件)</span></div>`
     : '';
 
-  // マイリスト：自分の評価・メモ
-  const myRateHtml = (mode === 'mylist' && ud.rate)
-    ? `<div class="user-avg-rate">⭐ 自分の評価: ${ud.rate}</div>`
+  // マイリスト：自分の評価 ＋ みんなの平均 ＋ メモ
+  const myRateHtml = (mode === 'mylist')
+    ? `<div class="card-rates-row">
+        ${ud.rate ? `<span class="card-myrate">⭐ ${ud.rate}</span>` : ''}
+        ${d.user_rate_avg ? `<span class="card-avgrate">👥 ★${d.user_rate_avg}<span class="urate-count">(${d.user_rate_count||0})</span></span>` : ''}
+       </div>`
     : '';
   const myMemoHtml = (mode === 'mylist' && ud.memo)
-    ? `<div class="csyno" style="border-left:2px solid var(--lav);padding-left:7px;margin-top:5px">${ud.memo}</div>`
+    ? `<div class="card-memo">${ud.memo}</div>`
     : '';
 
-  // Coryの視聴リスト：おすすめ度（星）
-  const coryRateHtml = (mode === 'cory' && d.recommend)
-    ? `<div class="crating"><div class="stars">${strs(d.recommend)}</div></div>`
+  // Coryの視聴リスト：nn/25表示 ＋ みんなの平均 ＋ メモ
+  const coryPt = (d.recommend && d.beginner_score)
+    ? Math.round(d.recommend * d.beginner_score * 10) / 10 : null;
+  const coryRateHtml = (mode === 'cory')
+    ? `<div class="card-rates-row">
+        ${coryPt ? `<span class="card-corypt">🌸 ${coryPt}<span style="font-size:9px;opacity:.7">/25</span></span>` : ''}
+        ${d.user_rate_avg ? `<span class="card-avgrate">👥 ★${d.user_rate_avg}<span class="urate-count">(${d.user_rate_count||0})</span></span>` : ''}
+        ${ud.rate ? `<span class="card-myrate">⭐ ${ud.rate}</span>` : ''}
+       </div>
+       ${d.comment ? `<div class="card-memo card-cory-memo">${d.comment}</div>` : ''}`
     : '';
 
   // Coryリスト管理者用インライン編集フォーム
@@ -1369,8 +1414,12 @@ function card(d, listMode) {
 
 function render() {
   const l = go();
-  // null チェック付きで安全にセット
   const setTxt = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  // モードに応じてフィルターの表示切替
+  const wrapU = document.getElementById('wrap-ustatus');
+  const wrapC = document.getElementById('wrap-cstatus');
+  if (wrapU) wrapU.style.display = (CARD_MODE === 'search' || CARD_MODE === 'mylist' || CARD_MODE === 'cory') ? '' : 'none';
+  if (wrapC) wrapC.style.display = CARD_MODE === 'cory' ? '' : 'none';
   setTxt('cnt', l.length + ' 件');
   setTxt('sTotal', localDramas.length);
   if (currentUser) {
@@ -1454,13 +1503,27 @@ function renderModal(id) {
   if (d.synopsis && d.synopsis !== '?') b += `<div class="msec"><div class="mlab">📖 あらすじ</div><div class="mcont">${(d.synopsis||'').replace(/\n/g,'<br>')}</div></div>`;
   // Cory評価
   if (d.rate || d.recommend || d.beginner_score) {
+    const rec = d.recommend || 0;
+    const bsc = d.beginner_score || 0;
+    const pt  = d.rate || Math.round(rec * bsc * 10) / 10;
     b += `<div class="mrate">
-      <div class="mrow">
-        <div><div class="mmlab">おすすめ度</div><div style="display:flex;gap:4px">${strs(d.recommend)}</div></div>
-        ${d.beginner_score?`<div><div class="mmlab">初心者向け</div><div class="dbar">${Array.from({length:5},(_,i)=>`<div class="dseg${i<d.beginner_score?' on':''}"></div>`).join('')}</div></div>`:''}
-        ${d.rate?`<div><div class="mmlab">総合Pt</div><div class="bigpt">${d.rate}</div></div>`:''}
-        ${d.user_rate_avg?`<div><div class="mmlab">ユーザー平均</div><div class="bigpt">★${d.user_rate_avg}<span style="font-size:10px;color:var(--muted)">(${d.user_rate_count||0}件)</span></div></div>`:''}
+      <div class="mrate-formula">
+        <div class="mrate-cell">
+          <div class="mmlab">おすすめ度</div>
+          <div class="mrate-num">${rec.toFixed(1)}<span class="mrate-max">/5</span></div>
+        </div>
+        <div class="mrate-op">×</div>
+        <div class="mrate-cell">
+          <div class="mmlab">初心者向け</div>
+          <div class="mrate-num">${bsc.toFixed(1)}<span class="mrate-max">/5</span></div>
+        </div>
+        <div class="mrate-op">=</div>
+        <div class="mrate-cell mrate-total-cell">
+          <div class="mmlab">総合点</div>
+          <div class="mrate-total">${pt}<span class="mrate-max">/25</span></div>
+        </div>
       </div>
+      ${d.user_rate_avg ? `<div class="mrate-user">👥 ユーザー平均 ★${d.user_rate_avg} <span style="font-size:10px;color:var(--muted)">(${d.user_rate_count||0}件)</span></div>` : ''}
     </div>`;
   }
   // 基本情報グリッド
@@ -1930,7 +1993,18 @@ select option{background:var(--dark2);}
 .mi-l{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:2px;}
 .mi-v{font-size:13px;color:var(--text);}
 .mrate{background:rgba(232,84,122,.06);border:1px solid rgba(232,84,122,.15);
-  border-radius:10px;padding:11px 13px;margin-bottom:14px;}
+  border-radius:10px;padding:13px 15px;margin-bottom:14px;}
+.mrate-formula{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.mrate-cell{display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.12);
+  border-radius:8px;padding:8px 12px;min-width:70px;}
+.mrate-total-cell{background:rgba(232,84,122,.1);border-color:rgba(232,84,122,.3);min-width:80px;}
+.mrate-op{font-size:18px;color:var(--muted);font-weight:300;flex-shrink:0;}
+.mrate-num{font-family:'DM Serif Display',serif;font-size:1.5rem;color:var(--ll);line-height:1;}
+.mrate-total{font-family:'DM Serif Display',serif;font-size:1.9rem;color:var(--rl);line-height:1;font-weight:700;}
+.mrate-max{font-size:10px;color:var(--muted);margin-left:1px;font-family:'Noto Sans JP',sans-serif;}
+.mrate-user{margin-top:10px;font-size:12px;color:var(--muted);}
+/* 後方互換 */
 .mrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .bigpt{font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--gold);}
 .dbar{display:flex;gap:3px;}
@@ -1947,6 +2021,13 @@ select option{background:var(--dark2);}
 .chip-sub{font-size:9px;color:var(--muted);margin-left:4px;}
 .chips{display:flex;gap:5px;flex-wrap:wrap;}
 .chip{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;}
+.card-rates-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;}
+.card-myrate{font-size:11px;color:var(--gold);background:rgba(212,168,67,.1);border:1px solid rgba(212,168,67,.2);border-radius:10px;padding:2px 7px;}
+.card-avgrate{font-size:11px;color:var(--ll);background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);border-radius:10px;padding:2px 7px;}
+.card-corypt{font-size:12px;color:var(--rl);background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.2);border-radius:10px;padding:2px 7px;font-weight:700;}
+.card-memo{font-size:11px;color:var(--muted);border-left:2px solid var(--lav);padding-left:7px;margin-top:5px;line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.card-cory-memo{border-color:var(--rl);color:#c4b0d8;}
 .cyt{background:rgba(255,0,0,.15);border:1px solid rgba(255,0,0,.3);color:#ff7070;}
 .cnf{background:rgba(229,9,20,.12);border:1px solid rgba(229,9,20,.3);color:#e05050;}
 .ciq{background:rgba(0,160,80,.12);border:1px solid rgba(0,160,80,.3);color:#5dc87a;}
@@ -2417,15 +2498,13 @@ textarea:focus{border-color:var(--lav);}
   letter-spacing: .02em;
   white-space: nowrap;
 }
-.sb-kofi-sub {
+.sb-kofi-brand {
   font-size: 9px;
-  opacity: .75;
+  font-weight: 400;
+  opacity: .7;
   letter-spacing: .06em;
   text-transform: uppercase;
-}
-.sb-kofi-logo {
-  flex-shrink: 0;
-  opacity: .85;
+  margin-left: 4px;
 }
 .sidebar-wrap.collapsed .sb-kofi-wrap {
   display: none;
@@ -2528,10 +2607,10 @@ textarea:focus{border-color:var(--lav);}
       <hr class="sb-divider">
 
       <!-- Coryの視聴リスト -->
-      <div class="sb-section-label">Coryの視聴リスト</div>
+      <div class="sb-section-label">🐶 Coryの視聴リスト</div>
 
       <button class="sb-item" id="sb-cory" onclick="sbNav('cory')">
-        <span class="sb-icon si-pink">🌸</span>
+        <span class="sb-icon si-pink">🐶</span>
         <span>Coryの視聴リスト</span>
       </button>
 
@@ -2591,7 +2670,7 @@ textarea:focus{border-color:var(--lav);}
       <div class="sb-section-label admin-only" id="sb-admin-section" style="display:none">管理者メニュー</div>
 
       <button class="sb-item admin-only" id="sb-admin-cory" style="display:none" onclick="sbNav('admin-cory')">
-        <span class="sb-icon si-gold">🌸</span>
+        <span class="sb-icon si-gold">🐶</span>
         <span>視聴リスト管理</span>
       </button>
       <button class="sb-item admin-only" id="sb-admin-add" style="display:none" onclick="openAdminAdd()">
@@ -2734,6 +2813,16 @@ textarea:focus{border-color:var(--lav);}
     <div class="multi-select-wrap">
       <button class="filter-btn" id="fbtn-year" onclick="toggleDropdown('dd-year')">放送年 ▾</button>
       <div class="multi-dropdown" id="dd-year"></div>
+    </div>
+    <!-- 視聴Status（モード別に動的表示） -->
+    <div class="multi-select-wrap" id="wrap-ustatus" style="display:none">
+      <button class="filter-btn" id="fbtn-ustatus" onclick="toggleDropdown('dd-ustatus')">視聴Status ▾</button>
+      <div class="multi-dropdown" id="dd-ustatus"></div>
+    </div>
+    <!-- CoryステータスフィルターCoryモード用 -->
+    <div class="multi-select-wrap" id="wrap-cstatus" style="display:none">
+      <button class="filter-btn" id="fbtn-cstatus" onclick="toggleDropdown('dd-cstatus')">Coryの状況 ▾</button>
+      <div class="multi-dropdown" id="dd-cstatus"></div>
     </div>
     <!-- 選択中タグ & リセット -->
     <div id="filter-tags"></div>
@@ -2996,18 +3085,12 @@ window.sbToggleCollapse = function() {
     wrap.innerHTML = `
       <a href="https://ko-fi.com/Q5Q11W7TQG" target="_blank" class="sb-kofi-link">
         <span class="sb-kofi-cup">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M18.5 3H6c-1.1 0-2 .9-2 2v5.71c0 3.83 2.95 7.18 6.78 7.29 3.96.12 7.22-3.06 7.22-7V5c0-.55-.45-1-1-1zm-1 7c0 2.76-2.24 5-5 5s-5-2.24-5-5V5h10v5zm3.5-5H19v4h2V5c0-.55-.45-1-1-1zM4 19h16v2H4z"/>
           </svg>
         </span>
         <span class="sb-kofi-text">
-          <span class="sb-kofi-label">コーヒーをおごる</span>
-          <span class="sb-kofi-sub">Powered by Ko-fi</span>
-        </span>
-        <span class="sb-kofi-logo">
-          <svg width="28" height="14" viewBox="0 0 80 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="0" y="24" font-family="Arial Black, sans-serif" font-weight="900" font-size="26" fill="#fff">Ko-fi</text>
-          </svg>
+          <span class="sb-kofi-label">コーヒーをおごる <span class="sb-kofi-brand">Powered by Ko-fi</span></span>
         </span>
       </a>`;
   }
@@ -3058,6 +3141,9 @@ window.sbNav = function(key) {
     if (user) {
       window._CARD_MODE_SET?.('mylist');
       window._F_SET?.('w');
+      window._S_SET?.('myrate');
+      const srtEl = document.getElementById('srt');
+      if (srtEl) srtEl.value = 'myrate';
       window.render?.();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');
@@ -3096,8 +3182,8 @@ function updateModeBar(key) {
   const modes = {
     'all':        { title: '🎬 作品を探す',         sub: 'ログイン不要で作品を探す' },
     'mylist':     { title: '👤 マイリスト',          sub: '無料ログイン後、自分だけのリストを作成する' },
-    'cory':       { title: '🌸 Coryの視聴リスト',    sub: 'coryの感想を見てみる' },
-    'admin-cory': { title: '🌸 視聴リスト管理',      sub: '管理者用：Coryの視聴記録を管理する' },
+    'cory':       { title: '🐶 Coryの視聴リスト',    sub: 'coryの感想を見てみる' },
+    'admin-cory': { title: '🐶 視聴リスト管理',      sub: '管理者用：Coryの視聴記録を管理する' },
   };
   const m = modes[key] || modes['all'];
   const titleEl = document.getElementById('modeTitle');

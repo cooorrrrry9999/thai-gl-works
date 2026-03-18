@@ -393,7 +393,7 @@ window.openAdminEdit = (id, e) => {
 };
 
 function resetAdminForm() {
-  ['af_title','af_release_start','af_release_end','af_cp_top','af_cp_bottom',
+  ['af_title','af_title_kana','af_release_start','af_release_end','af_cp_top','af_cp_bottom',
    'af_studio','af_ep_count','af_ep_minutes','af_synopsis',
    'af_original_title','af_original_author','af_comment',
    'af_mdl_url','af_sns_x','af_sns_ig'].forEach(id => {
@@ -419,6 +419,7 @@ function fillAdminForm(d) {
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
   // 基本情報
   set('af_title', d.title);
+  set('af_title_kana', d.title_kana || '');
   set('af_image_url', d.image_url || '');
   // release_start: 旧releaseフィールドから移行
   set('af_release_start', d.release_start || (d.release && d.release !== '未定' ? d.release + (d.release.length===7?'-01':'') : ''));
@@ -651,6 +652,7 @@ window.submitAdminForm = async () => {
 
   const data = {
     title:          get('title'),
+    title_kana:     get('title_kana'),
     studio:         get('studio'),
     release_start,
     release_end,
@@ -1010,7 +1012,7 @@ function go() {
         ? d.cps.map(c=>(c.top||'')+(c.bottom||'')+(c.ship_name||'')).join(' ')
         : (d.cp||'')+(d.cp_top||'')+(d.cp_bottom||'');
       const authorText = (d.original_author||'') + (d.original_title||'');
-      return (d.title + cpText + (d.synopsis||'') + (d.studio||'') + authorText).toLowerCase().includes(q);
+      return (d.title + (d.title_kana||'') + cpText + (d.synopsis||'') + (d.studio||'') + authorText).toLowerCase().includes(q);
     });
   }
   l.sort((a,b) => {
@@ -2486,6 +2488,7 @@ textarea:focus{border-color:var(--lav);}
         <div class="am-section-title">📋 基本情報</div>
         <div class="form-grid">
           <div class="form-group full"><label>タイトル *</label><input type="text" id="af_title"></div>
+          <div class="form-group full"><label>タイトル 読み仮名（カタカナ）</label><input type="text" id="af_title_kana" placeholder="例: チェイシング ラブ"></div>
           <div class="form-group full">
             <label>作品イメージ画像URL（縦長ポスター推奨）</label>
             <input type="url" id="af_image_url" placeholder="https://example.com/poster.jpg">

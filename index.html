@@ -1477,7 +1477,7 @@ function card(d, listMode) {
         <div class="cbody list-body">
           <div class="cleft">
             <div class="list-title-row">
-              <div class="ctitle list-ctitle">${d.title}${subBadge}${watchedBadge}</div>
+              <div class="ctitle list-ctitle">${d.title}${subBadge}</div>
               <span class="cyear">${year}</span>
             </div>
             ${d.title_kana ? `<div class="ckana list-ckana">${d.title_kana}</div>` : ''}
@@ -1507,7 +1507,7 @@ function card(d, listMode) {
       <div class="cbody">
         <div class="cheader">
           <div class="ctitle-wrap">
-            <div class="ctitle">${d.title}${upBadge}${subBadge}${watchedBadge}</div>
+            <div class="ctitle">${d.title}${upBadge}${subBadge}</div>
             ${d.title_kana ? `<div class="ckana">${d.title_kana}</div>` : ''}
           </div>
           <span class="cyear">${year}</span>

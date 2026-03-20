@@ -1013,7 +1013,7 @@ function showToast(msg, type='ok') {
 }
 
 // ── FILTER / SORT STATE ────────────────────────────────────────────────
-let V='g', F='a', Q='', S='urate', Y='all', STATUS_F=''; // Y/STATUS_Fは後方互換用
+let V='g', F='a', Q='', S='urate', O='desc', Y='all', STATUS_F=''; // O=order: asc/desc
 // カード表示モード: 'search'=作品を探す / 'mylist'=マイリスト / 'cory'=Coryの視聴リスト
 let CARD_MODE = 'search';
 // 複数選択フィルター（配列）
@@ -1102,6 +1102,17 @@ window.resetAllFilters = function() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('q').addEventListener('input', e=>{Q=e.target.value;render();});
   document.getElementById('srt').addEventListener('change', e=>{S=e.target.value;render();});
+  // 昇降順ボタン
+  window.toggleSortOrder = function() {
+    O = O === 'desc' ? 'asc' : 'desc';
+    const btn = document.getElementById('srt-order');
+    if (btn) {
+      btn.textContent = O === 'desc' ? '↓' : '↑';
+      btn.style.color = O === 'asc' ? 'var(--ll)' : 'var(--muted)';
+      btn.style.borderColor = O === 'asc' ? 'rgba(155,126,200,.5)' : 'rgba(155,126,200,.25)';
+    }
+    render();
+  };
   const c = document.getElementById('petals');
   for(let i=0;i<18;i++){const p=document.createElement('div');p.className='petal';p.style.cssText=`left:${Math.random()*100}%;animation-duration:${6+Math.random()*8}s;animation-delay:${Math.random()*8}s;opacity:${.1+Math.random()*.25};transform:scale(${.5+Math.random()})`;c.appendChild(p);}
   updateHeroStats();
@@ -1186,19 +1197,19 @@ function go() {
       return (d.title + (d.title_kana||'') + cpText + (d.synopsis||'') + (d.studio||'') + authorText).toLowerCase().includes(q);
     });
   }
+  const asc = O === 'asc' ? -1 : 1; // asc: -1で反転
   l.sort((a,b) => {
-    if(S==='new') return (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1;
-    if(S==='old') return (a.sort_date||'9999') > (b.sort_date||'9999') ? 1 : -1;
-    if(S==='urate')  return (b.user_rate_avg||0) - (a.user_rate_avg||0);
+    if(S==='new') { const r=(a.sort_date||'9999')<(b.sort_date||'9999')?1:-1; return r*asc; }
+    if(S==='old') { const r=(a.sort_date||'9999')>(b.sort_date||'9999')?1:-1; return r*asc; }
+    if(S==='urate')  return ((b.user_rate_avg||0) - (a.user_rate_avg||0)) * asc;
     if(S==='myrate') {
       const ua = userDoc.dramas?.[String(a._id||a.title)]?.rate || 0;
       const ub = userDoc.dramas?.[String(b._id||b.title)]?.rate || 0;
-      return ub - ua;
+      return (ub - ua) * asc;
     }
-    if(S==='rec')   return b.recommend - a.recommend;
-    if(S==='az')    return a.title.localeCompare(b.title);
-    if(S==='short') return (a.duration||0) - (b.duration||0);
-    if(S==='long')  return (b.duration||0) - (a.duration||0);
+    if(S==='rec')   return (b.recommend - a.recommend) * asc;
+    if(S==='az')    return a.title.localeCompare(b.title) * asc;
+    if(S==='short' || S==='long') return ((a.duration||0) - (b.duration||0)) * asc;
     return 0;
   });
   return l;
@@ -1465,20 +1476,22 @@ function card(d, listMode) {
           : `<div class="card-top"></div>`}
         <div class="cbody list-body">
           <div class="cleft">
-            <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
-            ${d.title_kana ? `<div class="ckana">${d.title_kana}</div>` : ''}
-            ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
-            ${myMemoHtml}
-            <div class="cmeta">
-              <span class="tag st-${stCls}">${status}</span>
+            <div class="list-title-row">
+              <div class="list-title-block">
+                <div class="ctitle">${d.title}${subBadge}${watchedBadge}</div>
+                ${d.title_kana ? `<div class="ckana">${d.title_kana}</div>` : ''}
+              </div>
+              <span class="cyear">${year}</span>
             </div>
-          </div>
-          <div class="cright">
-            <span class="cyear">${year}</span>
+            ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
             ${coryRateHtml}
             ${userAvgHtml}
             ${myRateHtml}
-            <div class="card-btns">${userBtns}${adminBtns}</div>
+            ${myMemoHtml}
+            <div class="cmeta">
+              <span class="tag st-${stCls}">${status}</span>
+              ${userBtns}${adminBtns}
+            </div>
           </div>
         </div>
       </div>`;
@@ -2068,12 +2081,15 @@ select option{background:var(--dark2);}
   border-radius:6px;padding:3px 6px;color:var(--muted);font-size:11px;cursor:pointer;
   font-family:'Noto Sans JP',sans-serif;}
 .grid.list .card{display:grid;grid-template-columns:3px 1fr;}
-.grid.list .card.has-img{grid-template-columns:56px 1fr;}
+.grid.list .card.has-img{grid-template-columns:72px 1fr;}
 .grid.list .card-top{width:3px;height:auto;background:linear-gradient(180deg,var(--rose),var(--lav));}
-.list-thumb{width:56px;height:100%;object-fit:cover;object-position:center top;display:block;flex-shrink:0;}
-.grid.list .cbody{display:grid;grid-template-columns:1fr auto;gap:7px;padding:10px 14px;}
+.list-thumb{width:72px;height:100%;object-fit:cover;object-position:center top;display:block;flex-shrink:0;}
+.grid.list .cbody{padding:10px 14px;}
 .grid.list .cleft{min-width:0;}
-.grid.list .cright{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
+.list-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:3px;}
+.list-title-block{flex:1;min-width:0;overflow:hidden;}
+.list-title-block .ctitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.list-title-row .cyear{flex-shrink:0;margin-top:3px;}
 .recdots{display:flex;gap:2px;}
 .rdot{width:6px;height:6px;border-radius:50%;background:rgba(232,84,122,.15);}
 .rdot.on{background:var(--rose);}
@@ -2866,15 +2882,19 @@ textarea:focus{border-color:var(--lav);}
     <!-- 自由検索 -->
     <div class="srch"><input type="text" id="q" placeholder="タイトル・CP・あらすじで検索..."></div>
     <!-- 並び替え -->
-    <select id="srt">
-      <option value="new">新しい順</option>
-      <option value="urate" selected>みんなの評価が高い順</option>
-      <option value="myrate">自分の評価が高い順</option>
-      <option value="rec">Coryのおすすめ順</option>
-      <option value="short">短い順</option>
-      <option value="long">長い順</option>
-      <option value="az">タイトル順</option>
-    </select>
+    <div style="display:flex;gap:4px;align-items:center">
+      <select id="srt">
+        <option value="new">放送日</option>
+        <option value="urate" selected>みんなの評価</option>
+        <option value="myrate">自分の評価</option>
+        <option value="rec">Coryのおすすめ</option>
+        <option value="short">作品時間</option>
+        <option value="az">タイトル</option>
+      </select>
+      <button id="srt-order" onclick="toggleSortOrder()"
+        style="background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.25);border-radius:8px;padding:6px 9px;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;transition:all .2s;font-family:inherit;"
+        title="昇順/降順切り替え">↓</button>
+    </div>
     <!-- グリッド/リスト切り替え -->
     <div class="btn-grp">
       <button class="btn active" id="vg" onclick="setView('g')">⊞</button>
@@ -3275,8 +3295,11 @@ window.sbNav = function(key) {
     window._FILTER_RESET?.();
     window._F_SET?.('a');
     window._S_SET?.('urate');
+    O = 'desc';
     const srtEl = document.getElementById('srt');
     if (srtEl) srtEl.value = 'urate';
+    const oBtn = document.getElementById('srt-order');
+    if (oBtn) { oBtn.textContent='↓'; oBtn.style.color='var(--muted)'; oBtn.style.borderColor='rgba(155,126,200,.25)'; }
     window.renderFilterTags?.();
     ['plt','status','studio','year','vpn','subtitle'].forEach(t => window.updateFilterBtnLabel?.(t));
     window.render?.();
@@ -3289,8 +3312,11 @@ window.sbNav = function(key) {
       window._CARD_MODE_SET?.('mylist');
       window._F_SET?.('w');
       window._S_SET?.('myrate');
+      O = 'desc';
       const srtEl = document.getElementById('srt');
       if (srtEl) srtEl.value = 'myrate';
+      const oBtn = document.getElementById('srt-order');
+      if (oBtn) { oBtn.textContent='↓'; oBtn.style.color='var(--muted)'; oBtn.style.borderColor='rgba(155,126,200,.25)'; }
       window.render?.();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');

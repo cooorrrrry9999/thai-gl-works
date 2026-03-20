@@ -3423,11 +3423,15 @@ window.sbNav = function(key) {
       window._CARD_MODE_SET?.('mylist');
       window._F_SET?.('w');
       window._S_SET?.('myrate');
+      window._FILTER_RESET?.(); // 前画面のフィルターをリセット
       O = 'desc';
       const srtEl = document.getElementById('srt');
       if (srtEl) srtEl.value = 'myrate';
       const oBtn = document.getElementById('srt-order');
       if (oBtn) { oBtn.textContent='↓'; oBtn.style.color='var(--muted)'; oBtn.style.borderColor='rgba(155,126,200,.25)'; }
+      // フィルターのチェックボックスもリセット
+      document.querySelectorAll('.multi-dropdown input[type=checkbox]').forEach(el => el.checked = false);
+      window.buildFilterDropdowns?.();
       window.render?.();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');

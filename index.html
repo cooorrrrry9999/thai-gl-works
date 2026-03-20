@@ -1207,7 +1207,7 @@ function go() {
       const ub = userDoc.dramas?.[String(b._id||b.title)]?.rate || 0;
       return (ub - ua) * asc;
     }
-    if(S==='rec')   return (b.recommend - a.recommend) * asc;
+    if(S==='rec')   return ((b.rate||0) - (a.rate||0)) * asc;  // 総合点（recommend × beginner_score）
     if(S==='az')    return a.title.localeCompare(b.title) * asc;
     if(S==='short' || S==='long') return ((a.duration||0) - (b.duration||0)) * asc;
     return 0;

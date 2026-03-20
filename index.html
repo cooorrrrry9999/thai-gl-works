@@ -1519,7 +1519,7 @@ function card(d, listMode) {
           <div class="card-status-row">
             <span class="tag st-${stCls}">${status}</span>
             ${ud.status ? `<span class="tag card-ustatus-tag">${ud.status}</span>` : ''}
-            ${d.cory_status && d.cory_status !== '未視聴' ? `<span class="tag card-coryst-tag">🐶 ${d.cory_status}</span>` : ''}
+            ${mode !== 'search' && d.cory_status && d.cory_status !== '未視聴' ? `<span class="tag card-coryst-tag">🐶 ${d.cory_status}</span>` : ''}
           </div>
           ${coryRateHtml}
           ${userAvgHtml}

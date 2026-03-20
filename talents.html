@@ -261,66 +261,13 @@ window.openDetail = id => {
     adminEl.style.display = 'none';
   }
 
-  // 共有ボタン用にタレントIDを保持
-  const shareWrap = document.getElementById('modalShareWrap');
-  if (shareWrap) shareWrap.dataset.talentId = id;
-  document.getElementById('modalShareMenu')?.classList.remove('open');
-
   document.getElementById('detailOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-};
-
-// ── 詳細モーダル共有ボタン ────────────────────────────────────────
-window.toggleModalTalentShare = (e) => {
-  e && e.stopPropagation();
-  document.getElementById('modalShareMenu').classList.toggle('open');
-};
-window.modalShareX = (e) => {
-  e && e.preventDefault(); e && e.stopPropagation();
-  const id = document.getElementById('modalShareWrap').dataset.talentId;
-  const t = talents.find(x => x._id === id);
-  const url = buildShareUrl(id);
-  const text = `${t?.nickname || ''} - ThaiGL タレント名鑑`;
-  window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener');
-  document.getElementById('modalShareMenu').classList.remove('open');
-};
-window.modalShareLine = (e) => {
-  e && e.preventDefault(); e && e.stopPropagation();
-  const id = document.getElementById('modalShareWrap').dataset.talentId;
-  const t = talents.find(x => x._id === id);
-  const url = buildShareUrl(id);
-  const text = `${t?.nickname || ''} - ThaiGL タレント名鑑`;
-  window.open(`https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank', 'noopener');
-  document.getElementById('modalShareMenu').classList.remove('open');
-};
-window.modalShareCopy = (e) => {
-  e && e.stopPropagation();
-  const id = document.getElementById('modalShareWrap').dataset.talentId;
-  navigator.clipboard.writeText(buildShareUrl(id)).then(() => showToast('リンクをコピーしました ✓'));
-  document.getElementById('modalShareMenu').classList.remove('open');
 };
 
 window.closeDetail = () => {
   document.getElementById('detailOverlay').classList.remove('open');
   document.body.style.overflow = '';
-};
-
-// ── SNS共有 ───────────────────────────────────────────────────────────
-function buildShareUrl(talentId) {
-  const base = location.origin + location.pathname;
-  return `${base}?talent=${encodeURIComponent(talentId)}`;
-}
-window.shareOnX = (nickname, talentId, e) => {
-  e && e.stopPropagation();
-  const url  = buildShareUrl(talentId);
-  const text = `${nickname} - ThaiGL タレント名鑑`;
-  window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener');
-};
-window.shareOnLine = (nickname, talentId, e) => {
-  e && e.stopPropagation();
-  const text = `${nickname} - ThaiGL タレント名鑑`;
-  const url  = buildShareUrl(talentId);
-  window.open(`https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank', 'noopener');
 };
 
 window.goToDrama = id => {
@@ -732,9 +679,6 @@ select option{background:var(--dark2);}
 .twchip{font-size:10px;padding:2px 7px;background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.2);border-radius:10px;color:var(--rl);}
 .twchip.more{background:rgba(155,126,200,.1);border-color:rgba(155,126,200,.2);color:var(--ll);}
 
-/* ── カード共有ボタン ─────────────────────────────────────────── */
-/* カード共有ボタンはモーダル右上に移動 */
-
 /* ── 詳細モーダル ─────────────────────────────────────────────── */
 .overlay{position:fixed;inset:0;background:rgba(10,5,18,.9);backdrop-filter:blur(8px);
   z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;
@@ -749,27 +693,6 @@ select option{background:var(--dark2);}
   border:1px solid rgba(155,126,200,.2);border-radius:50%;width:28px;height:28px;
   display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:14px;transition:all .2s;z-index:2;}
 .mclose:hover{background:rgba(232,84,122,.2);color:var(--rl);}
-.modal-share-wrap{position:absolute;top:13px;right:48px;z-index:2;}
-.modal-share-icon{width:28px;height:28px;border-radius:8px;
-  display:flex;align-items:center;justify-content:center;
-  background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.25);
-  color:var(--muted);cursor:pointer;transition:all .2s;padding:0;}
-.modal-share-icon:hover{background:rgba(155,126,200,.22);color:var(--ll);}
-.modal-share-menu{position:absolute;top:calc(100% + 6px);right:0;
-  background:#1e1430;border:1px solid rgba(155,126,200,.3);
-  border-radius:11px;padding:5px;
-  display:none;flex-direction:column;gap:2px;
-  min-width:150px;z-index:600;box-shadow:0 8px 28px rgba(0,0,0,.7);}
-.modal-share-menu.open{display:flex;}
-.modal-smitem{display:flex;align-items:center;gap:8px;padding:8px 12px;
-  border-radius:7px;font-size:12px;text-decoration:none;cursor:pointer;
-  font-family:'Noto Sans JP',sans-serif;border:none;background:none;
-  color:var(--muted);transition:background .15s,color .15s;
-  white-space:nowrap;text-align:left;width:100%;}
-.modal-smitem:hover{background:rgba(155,126,200,.12);color:var(--text);}
-.modal-sm-x:hover{background:rgba(0,0,0,.35);color:#fff;}
-.modal-sm-line:hover{background:rgba(6,199,85,.12);color:#06c755;}
-.modal-sm-copy:hover{background:rgba(155,126,200,.18);color:var(--ll);}
 
 .detail-layout{display:grid;grid-template-columns:200px 1fr;}
 .detail-img-col{padding:22px 0 22px 22px;}
@@ -974,33 +897,39 @@ select option{background:var(--dark2);}
       <button class="sb-toggle" onclick="sbToggleCollapse()" title="サイドバーを折りたたむ">◀</button>
     </div>
     <div class="sb-body">
-      <div class="sb-section-label">作品を探す</div>
+
+      <!-- 作品 -->
+      <div class="sb-section-label">作品</div>
       <a class="sb-item" href="index.html">
         <span class="sb-icon si-purple">🎬</span><span>作品を探す</span>
       </a>
-      <hr class="sb-divider">
-      <div class="sb-section-label">マイリスト</div>
       <a class="sb-item" href="index.html#mylist">
         <span class="sb-icon si-teal">👤</span><span>マイリスト</span>
       </a>
-      <hr class="sb-divider">
-      <div class="sb-section-label">Coryの視聴リスト</div>
       <a class="sb-item" href="index.html#cory">
         <span class="sb-icon si-pink">🐶</span><span>Coryの視聴リスト</span>
       </a>
+
       <hr class="sb-divider">
+
       <!-- タレント名鑑：このページ = active -->
-      <div class="sb-section-label">ThaiGLタレント名鑑</div>
+      <div class="sb-section-label">タレント名鑑</div>
       <button class="sb-item active">
         <span class="sb-icon si-teal">👩</span><span>タレント名鑑</span>
       </button>
+
       <hr class="sb-divider">
+
+      <!-- 次何見る？ -->
       <div class="sb-section-label">次何見る？</div>
       <button class="sb-item" onclick="_showToastFallback('近日公開予定です','warn')">
         <span class="sb-icon si-gold">🎲</span><span>次何見る？</span>
         <span class="sb-badge b-gold">準備中</span>
       </button>
+
       <hr class="sb-divider">
+
+      <!-- その他 -->
       <div class="sb-section-label">その他</div>
       <a class="sb-item" href="https://x.com/cory_fbshipper" target="_blank">
         <span class="sb-icon si-gray">𝕏</span><span>X ＠cory_fbshipper</span>
@@ -1008,7 +937,10 @@ select option{background:var(--dark2);}
       <a class="sb-item" href="https://note.com/cory_fbshipper" target="_blank">
         <span class="sb-icon si-gray">📝</span><span>Note ＠cory_fbshipper</span>
       </a>
+
       <hr class="sb-divider">
+
+      <!-- 管理者メニュー（管理者のみ表示） -->
       <div class="sb-section-label admin-only" style="display:none">管理者メニュー</div>
       <button class="sb-item admin-only" style="display:none" onclick="openAdd()">
         <span class="sb-icon si-gold">＋</span><span>タレントを追加</span>
@@ -1087,25 +1019,6 @@ select option{background:var(--dark2);}
 <div class="overlay" id="detailOverlay" onclick="event.target===this&&closeDetail()">
   <div class="modal">
     <button class="mclose" onclick="closeDetail()">✕</button>
-    <div class="modal-share-wrap" id="modalShareWrap">
-      <button class="modal-share-icon" onclick="toggleModalTalentShare(event)" title="シェア">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      </button>
-      <div class="modal-share-menu" id="modalShareMenu">
-        <a class="modal-smitem modal-sm-x" href="#" onclick="modalShareX(event)">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-          X でシェア
-        </a>
-        <a class="modal-smitem modal-sm-line" href="#" onclick="modalShareLine(event)">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
-          LINE でシェア
-        </a>
-        <button class="modal-smitem modal-sm-copy" onclick="modalShareCopy(event)">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          コピー
-        </button>
-      </div>
-    </div>
     <div class="detail-layout">
       <div class="detail-img-col"><div id="detailImgWrap"></div></div>
       <div class="detail-info-col">

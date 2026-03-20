@@ -3656,14 +3656,14 @@ async function drawCardImage(canvas, d) {
 
   // タイトル
   ctx.fillStyle = '#f0e8f8';
-  ctx.font = `bold 42px 'DM Serif Display', Georgia, serif`;
+  ctx.font = "bold 44px 'Meiryo', 'DM Serif Display', Georgia, sans-serif";
   const titleLines = wrapText(ctx, d.title, TX, TY, TW, 52, true);
   let ty = TY + titleLines * 52;
 
   // 読み仮名
   if (d.title_kana) {
     ctx.fillStyle = 'rgba(180,160,210,.7)';
-    ctx.font = '18px sans-serif';
+    ctx.font = "16px 'Meiryo', 'Noto Sans JP', sans-serif";
     ctx.fillText(d.title_kana, TX, ty + 10);
     ty += 36;
   }
@@ -3675,7 +3675,7 @@ async function drawCardImage(canvas, d) {
   if (cp) {
     ty += 16;
     ctx.fillStyle = '#c4a8e8';
-    ctx.font = '22px sans-serif';
+    ctx.font = "20px 'Meiryo', 'Noto Sans JP', sans-serif";
     ctx.fillText('👩‍❤️‍👩 ' + cp, TX, ty);
     ty += 36;
   }
@@ -3721,13 +3721,33 @@ async function drawGridImage(canvas, list) {
   bg.addColorStop(0, '#1a0a28'); bg.addColorStop(1, '#0e0518');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  // タイトル
-  ctx.fillStyle = '#f0e8f8';
-  ctx.font = "bold 36px 'DM Serif Display', Georgia, serif";
+  // フィルター内容から英語タイトルを生成
+  const _status  = document.getElementById('sig-status')?.value  || '';
+  const _year    = document.getElementById('sig-year')?.value    || '';
+  const _studio  = document.getElementById('sig-studio')?.value  || '';
+  const _minrate = parseInt(document.getElementById('sig-minrate')?.value || '0');
+  const _sort    = document.getElementById('sig-sort')?.value    || 'myrate';
+  const statusEN = { '視聴済み': 'Watched', '視聴中': 'Watching', 'Drop out': 'Dropped' };
+  const sortEN   = { 'myrate': 'My Rating', 'new': 'Newest', 'old': 'Oldest' };
+  let titleParts = [];
+  if (_status)  titleParts.push(statusEN[_status] || _status);
+  if (_year)    titleParts.push(_year);
+  if (_studio)  titleParts.push(_studio);
+  if (_minrate) titleParts.push('Rating ' + _minrate + '+');
+  titleParts.push('· ' + sortEN[_sort]);
+  const titleLabel = (titleParts.length ? titleParts.join('  ') : 'My List') + '  🐶';
+
+  // タイトル描画（2段構成：メインタイトル＋サブ情報）
   ctx.textAlign = 'center';
-  const status = document.getElementById('sig-status')?.value || '';
-  const titleLabel = status ? status + '作品 🐶' : 'マイリスト 🐶';
-  ctx.fillText(titleLabel, W/2, 60);
+  ctx.fillStyle = '#f0e8f8';
+  ctx.font = "bold 38px 'Meiryo', 'Noto Sans JP', 'DM Serif Display', sans-serif";
+  const mainTitle = _status ? (statusEN[_status] || _status) + ' List  🐶' : 'My Watch List  🐶';
+  ctx.fillText(mainTitle, W/2, 54);
+  // サブ情報（年・制作会社・評価フィルター）
+  const subParts = [_year, _studio, _minrate ? 'Rating '+_minrate+'+' : '', sortEN[_sort]].filter(Boolean);
+  ctx.fillStyle = 'rgba(180,160,210,.6)';
+  ctx.font = "16px 'Meiryo', 'Noto Sans JP', sans-serif";
+  ctx.fillText(subParts.join('  ·  '), W/2, 78);
 
   const cols = list.length <= 4 ? 2 : list.length <= 6 ? 3 : list.length <= 9 ? 3 : 4;
   const rows = Math.ceil(list.length / cols);
@@ -3774,32 +3794,39 @@ async function drawGridImage(canvas, list) {
     ctx.clip();
 
     // テキスト領域
-    const fontSize = Math.max(11, Math.min(15, cellW / 11));
-    const ty2 = y + cellH * 0.62 + 10;
-    ctx.fillStyle = '#f0e8f8';
-    ctx.font = `bold ${fontSize}px sans-serif`;
-    ctx.textAlign = 'left';
-    const titleLines = wrapText(ctx, d.title, x + 8, ty2, cellW - 16, fontSize + 4, true, 2);
-    let infoY = ty2 + titleLines * (fontSize + 4) + 4;
+    const FONT = "'Meiryo', 'Noto Sans JP', sans-serif";
+    const fTitle = Math.max(13, Math.min(17, cellW / 14));
+    const fRate  = Math.max(12, Math.min(15, cellW / 16));
+    const fMemo  = Math.max(10, Math.min(13, cellW / 18));
+    const PAD_T  = 10, PAD_X = 10;
+    let ty2 = y + cellH * 0.62 + fTitle;
 
-    // 評価
+    // タイトル（太字）
+    ctx.fillStyle = '#f0e8f8';
+    ctx.font = `bold ${fTitle}px ${FONT}`;
+    ctx.textAlign = 'left';
+    const titleLines = wrapText(ctx, d.title, x + PAD_X, ty2, cellW - PAD_X * 2, fTitle + 5, true, 2);
+    let infoY = ty2 + titleLines * (fTitle + 5) + 4;
+
+    // 評価（星アイコン＋数字）
     if (udata.rate) {
+      const stars = '★'.repeat(Math.min(5, udata.rate)) + '☆'.repeat(Math.max(0, 5 - udata.rate));
       ctx.fillStyle = '#d4a843';
-      ctx.font = `bold ${fontSize - 1}px sans-serif`;
-      ctx.fillText('⭐ ' + udata.rate, x + 8, infoY);
-      infoY += fontSize + 2;
+      ctx.font = `${fRate}px ${FONT}`;
+      ctx.fillText(stars + '  ' + udata.rate, x + PAD_X, infoY + fRate);
+      infoY += fRate + 6;
     }
 
-    // メモ（1行まで）
-    if (udata.memo && infoY < y + cellH - 8) {
-      ctx.fillStyle = 'rgba(180,160,210,.7)';
-      ctx.font = `${fontSize - 2}px sans-serif`;
-      const maxMemoW = cellW - 16;
-      const memo = udata.memo.replace(/\n/g, ' ');
+    // メモ（1行、薄め）
+    if (udata.memo && infoY + fMemo < y + cellH - 6) {
+      ctx.fillStyle = 'rgba(200,180,230,.75)';
+      ctx.font = `${fMemo}px ${FONT}`;
+      const maxMemoW = cellW - PAD_X * 2;
+      const memo = udata.memo.replace(/[\r\n]+/g, ' ');
       const memoText = ctx.measureText(memo).width > maxMemoW
         ? memo.slice(0, Math.floor(memo.length * maxMemoW / ctx.measureText(memo).width) - 1) + '…'
         : memo;
-      ctx.fillText(memoText, x + 8, infoY);
+      ctx.fillText(memoText, x + PAD_X, infoY + fMemo);
     }
     ctx.restore();
   }
@@ -3905,7 +3932,7 @@ function drawStatusBadge(ctx, x, y, status) {
 
 function drawLogo(ctx, W, H) {
   ctx.fillStyle = 'rgba(155,126,200,.4)';
-  ctx.font = '16px sans-serif';
+  ctx.font = "14px 'Meiryo', 'Noto Sans JP', sans-serif";
   ctx.textAlign = 'right';
   ctx.fillText("🌸 Cory's GL Guide", W - 24, H - 20);
 }

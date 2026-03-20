@@ -3646,7 +3646,8 @@ async function drawCardImage(canvas, d) {
       // 角丸クリッピング
       roundRect(ctx, POSTER_X, POSTER_Y, POSTER_W, POSTER_H, 16);
       ctx.clip();
-      ctx.drawImage(img, POSTER_X, POSTER_Y, POSTER_W, POSTER_H);
+      // object-fit:cover相当（縦長画像を歪ませない）
+      drawImageCover(ctx, img, POSTER_X, POSTER_Y, POSTER_W, POSTER_H);
       ctx.restore();
       posterDrawn = true;
     } catch(e) { ctx.restore(); }
@@ -3771,7 +3772,8 @@ async function drawGridImage(canvas, list) {
       try {
         const img = await loadImage(d.image_url);
         const ph = cellH * 0.62;
-        ctx.drawImage(img, x, y, cellW, ph);
+        // object-fit:cover相当
+        drawImageCover(ctx, img, x, y, cellW, ph);
         // グラデーションオーバーレイ
         const ov = ctx.createLinearGradient(x, y + ph * 0.5, x, y + ph);
         ov.addColorStop(0, 'transparent'); ov.addColorStop(1, '#1a0a28cc');
@@ -3809,6 +3811,27 @@ async function drawGridImage(canvas, list) {
 }
 
 // ── ユーティリティ ────────────────────────────────────────────────────
+// object-fit: cover と同等の描画（画像を歪ませずにトリミング）
+function drawImageCover(ctx, img, x, y, w, h) {
+  const imgAspect = img.width / img.height;
+  const boxAspect = w / h;
+  let sx, sy, sw, sh;
+  if (imgAspect > boxAspect) {
+    // 画像が横長 → 左右をトリミング
+    sh = img.height;
+    sw = img.height * boxAspect;
+    sx = (img.width - sw) / 2;
+    sy = 0;
+  } else {
+    // 画像が縦長 → 上下をトリミング（上寄せ）
+    sw = img.width;
+    sh = img.width / boxAspect;
+    sx = 0;
+    sy = 0; // 上寄せ（顔が上にある場合が多い）
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();

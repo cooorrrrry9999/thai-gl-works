@@ -194,6 +194,20 @@ function render() {
                ${appearances.length > 2 ? `<span class="twchip more">+${appearances.length - 2}</span>` : ''}
              </div>`
           : ''}
+        <div class="tcard-share" onclick="event.stopPropagation()">
+          <button class="tcard-share-btn tcard-share-x"
+            onclick="shareOnX('${t.nickname || ''}','${t._id}',event)"
+            title="𝕏でシェア">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            シェア
+          </button>
+          <button class="tcard-share-btn tcard-share-line"
+            onclick="shareOnLine('${t.nickname || ''}','${t._id}',event)"
+            title="LINEでシェア">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+            LINE
+          </button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -268,6 +282,24 @@ window.openDetail = id => {
 window.closeDetail = () => {
   document.getElementById('detailOverlay').classList.remove('open');
   document.body.style.overflow = '';
+};
+
+// ── SNS共有 ───────────────────────────────────────────────────────────
+function buildShareUrl(talentId) {
+  const base = location.origin + location.pathname;
+  return `${base}?talent=${encodeURIComponent(talentId)}`;
+}
+window.shareOnX = (nickname, talentId, e) => {
+  e && e.stopPropagation();
+  const url  = buildShareUrl(talentId);
+  const text = `${nickname} - ThaiGL タレント名鑑`;
+  window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener');
+};
+window.shareOnLine = (nickname, talentId, e) => {
+  e && e.stopPropagation();
+  const text = `${nickname} - ThaiGL タレント名鑑`;
+  const url  = buildShareUrl(talentId);
+  window.open(`https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank', 'noopener');
 };
 
 window.goToDrama = id => {
@@ -678,6 +710,16 @@ select option{background:var(--dark2);}
 .tcard-worklist{display:flex;gap:4px;flex-wrap:wrap;}
 .twchip{font-size:10px;padding:2px 7px;background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.2);border-radius:10px;color:var(--rl);}
 .twchip.more{background:rgba(155,126,200,.1);border-color:rgba(155,126,200,.2);color:var(--ll);}
+
+/* ── カード共有ボタン ─────────────────────────────────────────── */
+.tcard-share{display:flex;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(155,126,200,.12);}
+.tcard-share-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;
+  padding:4px 0;border-radius:6px;font-size:10px;font-family:'Noto Sans JP',sans-serif;
+  cursor:pointer;border:1px solid transparent;transition:all .2s;white-space:nowrap;}
+.tcard-share-x{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.1);color:#aaa;}
+.tcard-share-x:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;}
+.tcard-share-line{background:rgba(6,199,85,.08);border-color:rgba(6,199,85,.2);color:#5dcc7a;}
+.tcard-share-line:hover{background:rgba(6,199,85,.18);border-color:rgba(6,199,85,.4);color:#7ee898;}
 
 /* ── 詳細モーダル ─────────────────────────────────────────────── */
 .overlay{position:fixed;inset:0;background:rgba(10,5,18,.9);backdrop-filter:blur(8px);

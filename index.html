@@ -218,6 +218,7 @@ async function loadDramasFromDB() {
       snap.forEach(d => arr.push({ _id: d.id, ...d.data() }));
       arr.sort((a,b) => (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1);
       localDramas = arr;
+      window._localDramas = arr; // 画像作成機能で使用
     } else {
       localDramas = [];
     }
@@ -237,11 +238,7 @@ async function loadDramasFromDB() {
 // ?drama=ID のとき：1件だけ先行取得してモーダルを即座に開く（スマホ高速化）
 async function preloadDramaModal(dramaId) {
   try {
-    // ドラマ1件 と タレント一覧 を並列取得（タレントリンクを正しく表示するため）
-    const [snap] = await Promise.all([
-      getDoc(doc(db, 'dramas', dramaId)),
-      localTalents.length === 0 ? loadTalentsFromDB() : Promise.resolve(),
-    ]);
+    const snap = await getDoc(doc(db, 'dramas', dramaId));
     if (!snap.exists()) return;
     const d = { _id: snap.id, ...snap.data() };
     // localDramasにまだなければ先行追加
@@ -997,12 +994,17 @@ function updateAuthUI() {
   const adminBadge = document.getElementById('adminBadge');
   if (currentUser) {
     loginBtn.style.display = 'none'; userPanel.style.display = 'flex';
+    // 画像作成ボタンを表示
+    document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = '');
+    document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = '');
     if (currentUser.photoURL) { avatar.src = currentUser.photoURL; avatar.style.display='block'; }
     else avatar.style.display = 'none';
     name.textContent = currentUser.displayName || currentUser.email;
     adminBadge.style.display = isAdmin ? 'inline-block' : 'none';
   } else {
     loginBtn.style.display = 'flex'; userPanel.style.display = 'none';
+    document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = 'none');
+    document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = 'none');
   }
 }
 function showUserFilters(on) {
@@ -1481,7 +1483,7 @@ function card(d, listMode) {
         <div class="cbody list-body">
           <div class="cleft">
             <div class="list-title-row">
-              <div class="ctitle list-ctitle">${d.title}${subBadge}</div>
+              <div class="ctitle list-ctitle">${d.title}${subBadge}${watchedBadge}</div>
               <span class="cyear">${year}</span>
             </div>
             ${d.title_kana ? `<div class="ckana list-ckana">${d.title_kana}</div>` : ''}
@@ -1510,26 +1512,20 @@ function card(d, listMode) {
         : `<div class="card-top"></div>`}
       <div class="cbody">
         <div class="cheader">
-          <div class="ctitle-wrap">
-            <div class="ctitle">${d.title}${upBadge}${subBadge}</div>
-            ${d.title_kana ? `<div class="ckana">${d.title_kana}</div>` : ''}
-          </div>
+          <div class="ctitle">${d.title}${upBadge}${subBadge}${watchedBadge}</div>
+          ${d.title_kana ? `<div class="ckana">${d.title_kana}</div>` : ''}
           <span class="cyear">${year}</span>
         </div>
         ${cp ? `<div class="ccp">👩‍❤️‍👩 ${cp}</div>` : ''}
         ${d.synopsis && d.synopsis !== '?'
           ? `<div class="csyno">${d.synopsis}</div>` : ''}
-        <div class="card-status-block">
-          <div class="card-status-row">
-            <span class="tag st-${stCls}">${status}</span>
-            ${ud.status ? `<span class="tag card-ustatus-tag">${ud.status}</span>` : ''}
-            ${mode !== 'search' && d.cory_status && d.cory_status !== '未視聴' ? `<span class="tag card-coryst-tag">🐶 ${d.cory_status}</span>` : ''}
-          </div>
-          ${coryRateHtml}
-          ${userAvgHtml}
-          ${myRateHtml}
-          ${myMemoHtml}
+        <div class="cmeta">
+          <span class="tag st-${stCls}">${status}</span>
         </div>
+        ${coryRateHtml}
+        ${userAvgHtml}
+        ${myRateHtml}
+        ${myMemoHtml}
         ${coryEditHtml}
         <div class="card-btns">${userBtns}${adminBtns}</div>
       </div>
@@ -2029,15 +2025,8 @@ select option{background:var(--dark2);}
 .card.no-info .card-top{background:linear-gradient(90deg,rgba(155,126,200,.3),rgba(155,126,200,.15));}
 .cbody{padding:12px 14px;}
 .cheader{display:flex;justify-content:space-between;align-items:flex-start;gap:7px;margin-bottom:6px;}
-.ctitle-wrap{flex:1;min-width:0;}
-.ctitle{font-family:'DM Serif Display',serif;font-size:14.5px;color:var(--text);line-height:1.3;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ctitle{font-family:'DM Serif Display',serif;font-size:14.5px;color:var(--text);line-height:1.3;flex:1;}
 .ckana{font-size:10px;color:var(--muted);letter-spacing:.06em;margin-top:1px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-/* ── カードstatus-block ─── */
-.card-status-block{margin-top:8px;padding-top:8px;border-top:1px solid rgba(155,126,200,.1);}
-.card-status-row{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:4px;}
-.card-ustatus-tag{background:rgba(155,126,200,.12);border:1px solid rgba(155,126,200,.25);color:var(--ll);}
-.card-coryst-tag{background:rgba(232,84,122,.08);border:1px solid rgba(232,84,122,.2);color:var(--rl);}
 .cyear{font-size:10px;color:var(--muted);background:rgba(155,126,200,.1);
   border:1px solid rgba(155,126,200,.2);padding:2px 6px;border-radius:9px;white-space:nowrap;flex-shrink:0;}
 .ccp{font-size:11px;color:var(--ll);margin-bottom:5px;}
@@ -2574,6 +2563,7 @@ textarea:focus{border-color:var(--lav);}
 .si-teal   { background: rgba(92,184,133,.12);  color: #7dc87d; }
 .si-gold   { background: rgba(212,168,67,.12);  color: var(--gold); }
 .si-gray   { background: rgba(155,126,200,.08); color: var(--muted); }
+.si-rose   { background: rgba(232,84,122,.12);  color: var(--rl); }
 
 .sidebar-wrap.collapsed .sb-item span:not(.sb-icon),
 .sidebar-wrap.collapsed .sb-badge { display: none; }
@@ -2592,6 +2582,7 @@ textarea:focus{border-color:var(--lav);}
 .b-purple { background: rgba(155,126,200,.2);  color: var(--ll); }
 .b-pink   { background: rgba(232,84,122,.15);  color: var(--rl); }
 .b-gold   { background: rgba(212,168,67,.15);  color: var(--gold); }
+.b-pink   { background: rgba(232,84,122,.15);  color: var(--rl); }
 
 .sb-divider {
   border: none;
@@ -2768,6 +2759,16 @@ textarea:focus{border-color:var(--lav);}
         <span class="sb-icon si-teal">👤</span>
         <span>マイリスト</span>
         <span class="sb-badge b-purple" id="sb-watched-count" style="display:none">0</span>
+      </button>
+
+      <hr class="sb-divider">
+
+      <!-- 画像を作る（ログイン時のみ） -->
+      <div class="sb-section-label" id="sb-shareimg-section" style="display:none">マイリストを共有</div>
+      <button class="sb-item" id="sb-shareimg" style="display:none" onclick="openShareImgModal()">
+        <span class="sb-icon si-rose">📸</span>
+        <span>画像を作る</span>
+        <span class="sb-badge b-pink">NEW</span>
       </button>
 
       <hr class="sb-divider">
@@ -3046,6 +3047,109 @@ textarea:focus{border-color:var(--lav);}
       </div>
     </div>
     <div class="mbody" id="mb"></div>
+  </div>
+</div>
+
+<!-- 画像作成モーダル -->
+<div class="admin-overlay" id="shareImgModal">
+  <div class="admin-modal" style="max-width:680px">
+    <div class="am-head">
+      <h2>📸 画像を作る</h2>
+      <button class="am-close" onclick="closeShareImgModal()">✕</button>
+    </div>
+    <div class="am-body" style="display:flex;flex-direction:column;gap:16px">
+
+      <!-- フィルター設定 -->
+      <div class="am-section">
+        <div class="am-section-title">🎛 対象作品フィルター</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <div class="form-group" style="min-width:150px">
+            <label>視聴Status</label>
+            <select id="sig-status">
+              <option value="">すべて</option>
+              <option value="視聴済み">視聴済み</option>
+              <option value="視聴中">視聴中</option>
+              <option value="Drop out">Drop out</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:120px">
+            <label>放送年</label>
+            <select id="sig-year">
+              <option value="">すべて</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:150px">
+            <label>制作会社</label>
+            <select id="sig-studio">
+              <option value="">すべて</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:130px">
+            <label>並び順</label>
+            <select id="sig-sort">
+              <option value="myrate">自分の評価順</option>
+              <option value="new">放送年（新しい順）</option>
+              <option value="old">放送年（古い順）</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:120px">
+            <label>最低自分評価</label>
+            <select id="sig-minrate">
+              <option value="0">指定なし</option>
+              <option value="3">3以上</option>
+              <option value="4">4以上</option>
+              <option value="5">5のみ</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 形式・件数 -->
+      <div class="am-section">
+        <div class="am-section-title">🖼 形式・件数</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <div class="form-group" style="min-width:140px">
+            <label>形式</label>
+            <select id="sig-mode" onchange="updateSigCount()">
+              <option value="card">カード（1作品）</option>
+              <option value="grid">一覧（複数作品）</option>
+            </select>
+          </div>
+          <div class="form-group sig-count-wrap" style="min-width:120px">
+            <label>表示件数</label>
+            <select id="sig-count">
+              <option value="4">4件</option>
+              <option value="6">6件</option>
+              <option value="9">9件</option>
+              <option value="12">12件</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- プレビュー -->
+      <div class="am-section">
+        <div class="am-section-title">👁 プレビュー</div>
+        <div style="text-align:center;margin-bottom:8px">
+          <button class="plat-add-btn" onclick="generateShareImg()" style="background:rgba(232,84,122,.15);border-color:rgba(232,84,122,.3);color:var(--rl)">
+            ✨ プレビューを生成
+          </button>
+        </div>
+        <div id="sig-preview" style="display:none;text-align:center">
+          <canvas id="sig-canvas" style="max-width:100%;border-radius:8px;border:1px solid rgba(155,126,200,.2)"></canvas>
+          <div id="sig-count-info" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+        </div>
+        <div id="sig-empty" style="display:none;font-size:12px;color:var(--muted);text-align:center;padding:20px 0">
+          条件に合う作品が見つかりません
+        </div>
+      </div>
+
+    </div>
+    <div class="am-footer">
+      <button class="am-cancel" onclick="closeShareImgModal()">閉じる</button>
+      <button class="am-save" id="sig-save-btn" style="display:none" onclick="saveShareImg()">💾 画像を保存</button>
+      <button class="am-save" id="sig-x-btn" style="display:none;background:rgba(0,0,0,.3);border-color:rgba(255,255,255,.2);color:#fff" onclick="shareToX()">𝕏 Xで共有</button>
+    </div>
   </div>
 </div>
 
@@ -3421,6 +3525,389 @@ window.updateSidebarState = function updateSidebarState() {
 
 /* ── 視聴環境パネル（配信・VPN・字幕を一括設定） ─────────────────────── */
 
+
+/* ── 画像作成機能 ──────────────────────────────────────────────────── */
+
+window.openShareImgModal = function() {
+  const modal = document.getElementById('shareImgModal');
+  if (!modal) return;
+  modal.classList.add('open');
+  // フィルターの選択肢を動的生成
+  const years = [...new Set((window._localDramas||[]).map(d=>d.year||'未定').filter(y=>y!=='未定'))].sort((a,b)=>b-a);
+  const studios = [...new Set((window._localDramas||[]).map(d=>d.studio||'').filter(Boolean))].sort();
+  const ySel = document.getElementById('sig-year');
+  const sSel = document.getElementById('sig-studio');
+  if (ySel) {
+    ySel.innerHTML = '<option value="">すべて</option>' + years.map(y=>`<option value="${y}">${y}年</option>`).join('');
+  }
+  if (sSel) {
+    sSel.innerHTML = '<option value="">すべて</option>' + studios.map(s=>`<option value="${s}">${s}</option>`).join('');
+  }
+  updateSigCount();
+};
+
+window.closeShareImgModal = function() {
+  document.getElementById('shareImgModal')?.classList.remove('open');
+};
+
+window.updateSigCount = function() {
+  const mode = document.getElementById('sig-mode')?.value;
+  const wrap = document.querySelector('.sig-count-wrap');
+  if (wrap) wrap.style.display = mode === 'card' ? 'none' : '';
+};
+
+// フィルタリングして対象作品を取得
+function getSigDramas() {
+  const ud = window._userDoc || { dramas: {} };
+  const status  = document.getElementById('sig-status')?.value || '';
+  const year    = document.getElementById('sig-year')?.value || '';
+  const studio  = document.getElementById('sig-studio')?.value || '';
+  const sort    = document.getElementById('sig-sort')?.value || 'myrate';
+  const minrate = parseInt(document.getElementById('sig-minrate')?.value || '0');
+  const mode    = document.getElementById('sig-mode')?.value || 'card';
+  const count   = mode === 'card' ? 1 : parseInt(document.getElementById('sig-count')?.value || '4');
+
+  let list = (window._localDramas || []).filter(d => {
+    const key = String(d._id || d.title);
+    const udata = ud.dramas?.[key] || {};
+    if (!udata.status) return false;
+    if (status && udata.status !== status) return false;
+    if (year && (d.year || '未定') !== year) return false;
+    if (studio && (d.studio || '') !== studio) return false;
+    if (minrate > 0 && (udata.rate || 0) < minrate) return false;
+    return true;
+  });
+
+  // ソート
+  list.sort((a, b) => {
+    const ka = String(a._id || a.title), kb = String(b._id || b.title);
+    const ua = ud.dramas?.[ka] || {}, ub = ud.dramas?.[kb] || {};
+    if (sort === 'myrate') return (ub.rate || 0) - (ua.rate || 0);
+    if (sort === 'new') return (b.sort_date || '0000').localeCompare(a.sort_date || '0000');
+    if (sort === 'old') return (a.sort_date || '9999').localeCompare(b.sort_date || '9999');
+    return 0;
+  });
+
+  return { list: list.slice(0, count), total: list.length };
+}
+
+window.generateShareImg = async function() {
+  const { list, total } = getSigDramas();
+  const mode = document.getElementById('sig-mode')?.value || 'card';
+  const preview = document.getElementById('sig-preview');
+  const empty   = document.getElementById('sig-empty');
+  const info    = document.getElementById('sig-count-info');
+
+  if (!list.length) {
+    if (preview) preview.style.display = 'none';
+    if (empty)   empty.style.display = '';
+    document.getElementById('sig-save-btn').style.display = 'none';
+    document.getElementById('sig-x-btn').style.display = 'none';
+    return;
+  }
+  if (empty)   empty.style.display = 'none';
+  if (preview) preview.style.display = '';
+  if (info) info.textContent = `${total}件中 ${list.length}件を表示`;
+
+  const canvas = document.getElementById('sig-canvas');
+  if (mode === 'card') {
+    await drawCardImage(canvas, list[0]);
+  } else {
+    await drawGridImage(canvas, list);
+  }
+
+  document.getElementById('sig-save-btn').style.display = '';
+  document.getElementById('sig-x-btn').style.display = '';
+};
+
+// ── Canvas描画：カード形式（1200×630） ───────────────────────────────
+async function drawCardImage(canvas, d) {
+  const W = 1200, H = 630;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const ud = (window._userDoc?.dramas || {})[String(d._id || d.title)] || {};
+
+  // 背景グラデーション
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#1a0a28');
+  bg.addColorStop(0.5, '#2a1040');
+  bg.addColorStop(1, '#0e0518');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // 左側ポスター領域
+  const POSTER_W = 280, POSTER_H = 420, POSTER_X = 80, POSTER_Y = (H - POSTER_H) / 2;
+
+  // ポスター画像を試みる
+  let posterDrawn = false;
+  if (d.image_url) {
+    try {
+      const img = await loadImage(d.image_url);
+      // 角丸クリッピング
+      roundRect(ctx, POSTER_X, POSTER_Y, POSTER_W, POSTER_H, 16);
+      ctx.clip();
+      ctx.drawImage(img, POSTER_X, POSTER_Y, POSTER_W, POSTER_H);
+      ctx.restore();
+      posterDrawn = true;
+    } catch(e) { ctx.restore(); }
+  }
+  if (!posterDrawn) {
+    // 代替：グラデーション
+    ctx.save();
+    roundRect(ctx, POSTER_X, POSTER_Y, POSTER_W, POSTER_H, 16);
+    ctx.clip();
+    const pg = ctx.createLinearGradient(POSTER_X, POSTER_Y, POSTER_X + POSTER_W, POSTER_Y + POSTER_H);
+    pg.addColorStop(0, '#9b7ec8'); pg.addColorStop(1, '#e8547a');
+    ctx.fillStyle = pg;
+    ctx.fillRect(POSTER_X, POSTER_Y, POSTER_W, POSTER_H);
+    ctx.restore();
+    // タイトル文字
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    wrapText(ctx, d.title, POSTER_X + POSTER_W/2, POSTER_Y + POSTER_H/2, POSTER_W - 20, 26);
+  }
+
+  // 右側テキスト
+  const TX = POSTER_X + POSTER_W + 60, TY = 100, TW = W - TX - 60;
+  ctx.textAlign = 'left';
+
+  // タイトル
+  ctx.fillStyle = '#f0e8f8';
+  ctx.font = `bold 42px 'DM Serif Display', Georgia, serif`;
+  const titleLines = wrapText(ctx, d.title, TX, TY, TW, 52, true);
+  let ty = TY + titleLines * 52;
+
+  // 読み仮名
+  if (d.title_kana) {
+    ctx.fillStyle = 'rgba(180,160,210,.7)';
+    ctx.font = '18px sans-serif';
+    ctx.fillText(d.title_kana, TX, ty + 10);
+    ty += 36;
+  }
+
+  // CP
+  const cp = d.cps && d.cps.length
+    ? d.cps.filter(c=>c.top||c.bottom).map(c => c.ship_name || [c.top,c.bottom].filter(Boolean).join(' / ')).join(' & ')
+    : '';
+  if (cp) {
+    ty += 16;
+    ctx.fillStyle = '#c4a8e8';
+    ctx.font = '22px sans-serif';
+    ctx.fillText('👩‍❤️‍👩 ' + cp, TX, ty);
+    ty += 36;
+  }
+
+  // 自分の評価
+  if (ud.rate) {
+    ty += 20;
+    drawRateBadge(ctx, TX, ty, ud.rate);
+    ty += 50;
+  }
+
+  // 視聴Status
+  if (ud.status) {
+    ty += 10;
+    drawStatusBadge(ctx, TX, ty, ud.status);
+    ty += 44;
+  }
+
+  // メモ
+  if (ud.memo) {
+    ty += 20;
+    ctx.fillStyle = 'rgba(180,160,210,.6)';
+    ctx.font = '18px sans-serif';
+    ctx.beginPath();
+    ctx.moveTo(TX, ty - 4); ctx.lineTo(TX, ty + 42);
+    ctx.strokeStyle = '#9b7ec8'; ctx.lineWidth = 3; ctx.stroke();
+    wrapText(ctx, ud.memo, TX + 14, ty + 2, TW - 14, 24, true, 2);
+  }
+
+  // ロゴ
+  drawLogo(ctx, W, H);
+}
+
+// ── Canvas描画：一覧形式（1080×1080） ────────────────────────────────
+async function drawGridImage(canvas, list) {
+  const W = 1080, H = 1080;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const ud = window._userDoc?.dramas || {};
+
+  // 背景
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#1a0a28'); bg.addColorStop(1, '#0e0518');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // タイトル
+  ctx.fillStyle = '#f0e8f8';
+  ctx.font = "bold 36px 'DM Serif Display', Georgia, serif";
+  ctx.textAlign = 'center';
+  const status = document.getElementById('sig-status')?.value || '';
+  ctx.fillText((status || '視聴') + '済み作品 🐶', W/2, 60);
+
+  const cols = list.length <= 4 ? 2 : list.length <= 6 ? 3 : list.length <= 9 ? 3 : 4;
+  const rows = Math.ceil(list.length / cols);
+  const PAD = 40, GAP = 16;
+  const cellW = (W - PAD*2 - GAP*(cols-1)) / cols;
+  const cellH = (H - 100 - PAD - GAP*(rows-1)) / rows;
+
+  for (let i = 0; i < list.length; i++) {
+    const d = list[i];
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = PAD + col * (cellW + GAP);
+    const y = 90 + row * (cellH + GAP);
+    const udata = ud[String(d._id || d.title)] || {};
+
+    // セル背景
+    ctx.save();
+    roundRect(ctx, x, y, cellW, cellH, 12);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(155,126,200,.08)';
+    ctx.fillRect(x, y, cellW, cellH);
+
+    // ポスター画像
+    if (d.image_url) {
+      try {
+        const img = await loadImage(d.image_url);
+        const ph = cellH * 0.62;
+        ctx.drawImage(img, x, y, cellW, ph);
+        // グラデーションオーバーレイ
+        const ov = ctx.createLinearGradient(x, y + ph * 0.5, x, y + ph);
+        ov.addColorStop(0, 'transparent'); ov.addColorStop(1, '#1a0a28cc');
+        ctx.fillStyle = ov; ctx.fillRect(x, y, cellW, ph);
+      } catch(e) {
+        // 代替背景
+        const pg = ctx.createLinearGradient(x, y, x + cellW, y + cellH);
+        pg.addColorStop(0, '#9b7ec8'); pg.addColorStop(1, '#e8547a');
+        ctx.fillStyle = pg; ctx.fillRect(x, y, cellW, cellH * 0.62);
+      }
+    }
+
+    ctx.restore();
+    ctx.save();
+    roundRect(ctx, x, y, cellW, cellH, 12);
+    ctx.clip();
+
+    // テキスト領域
+    const th = cellH * 0.38, ty2 = y + cellH * 0.62 + 10;
+    ctx.fillStyle = '#f0e8f8';
+    ctx.font = `bold ${Math.max(12, Math.min(16, cellW/10))}px sans-serif`;
+    ctx.textAlign = 'left';
+    wrapText(ctx, d.title, x + 8, ty2, cellW - 16, 20, true, 2);
+
+    // 評価
+    if (udata.rate) {
+      ctx.fillStyle = '#d4a843';
+      ctx.font = `bold ${Math.max(11,Math.min(14,cellW/12))}px sans-serif`;
+      ctx.fillText('⭐ ' + udata.rate, x + 8, y + cellH - 14);
+    }
+    ctx.restore();
+  }
+
+  drawLogo(ctx, W, H);
+}
+
+// ── ユーティリティ ────────────────────────────────────────────────────
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function wrapText(ctx, text, x, y, maxW, lineH, doFill=true, maxLines=99) {
+  if (!text) return 0;
+  const words = text.split('');
+  let line = '', lineCount = 0, cy = y;
+  for (let i = 0; i < text.length; i++) {
+    const test = line + text[i];
+    if (ctx.measureText(test).width > maxW && line) {
+      if (lineCount >= maxLines - 1) {
+        if (doFill) ctx.fillText(line + '…', x, cy);
+        return lineCount + 1;
+      }
+      if (doFill) ctx.fillText(line, x, cy);
+      line = text[i]; cy += lineH; lineCount++;
+    } else {
+      line = test;
+    }
+  }
+  if (line && lineCount < maxLines) {
+    if (doFill) ctx.fillText(line, x, cy);
+    lineCount++;
+  }
+  return lineCount;
+}
+
+function drawRateBadge(ctx, x, y, rate) {
+  const stars = '⭐'.repeat(Math.min(5, rate));
+  ctx.fillStyle = 'rgba(212,168,67,.15)';
+  roundRect(ctx, x, y, 200, 38, 19);
+  ctx.fill();
+  ctx.fillStyle = '#d4a843';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`⭐ 自分の評価: ${rate}`, x + 12, y + 26);
+}
+
+function drawStatusBadge(ctx, x, y, status) {
+  const colors = { '視聴済み': ['rgba(155,126,200,.2)', '#c4a8e8'], '視聴中': ['rgba(232,84,122,.15)', '#f0839e'], 'Drop out': ['rgba(155,126,200,.1)', '#9b7ec8'] };
+  const [bg, fg] = colors[status] || ['rgba(155,126,200,.1)', '#9b7ec8'];
+  ctx.measureText(status);
+  const tw = ctx.measureText(status).width + 32;
+  ctx.fillStyle = bg;
+  ctx.font = 'bold 20px sans-serif';
+  roundRect(ctx, x, y, tw, 36, 18);
+  ctx.fill();
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'left';
+  ctx.fillText(status, x + 16, y + 25);
+}
+
+function drawLogo(ctx, W, H) {
+  ctx.fillStyle = 'rgba(155,126,200,.4)';
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText("🌸 Cory's GL Guide", W - 24, H - 20);
+}
+
+window.saveShareImg = function() {
+  const canvas = document.getElementById('sig-canvas');
+  if (!canvas) return;
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = 'cory-gl-' + new Date().toISOString().slice(0,10) + '.png';
+  a.click();
+  showToast('画像を保存しました ✓');
+};
+
+window.shareToX = function() {
+  const text = encodeURIComponent("タイGLを観てます🌸 #タイGL #CoryGLGuide
+" + location.origin + location.pathname);
+  window.open('https://x.com/intent/tweet?text=' + text, '_blank');
+};
+
+// localDramasをwindowに公開（画像作成で使用）
+window._exposeLocalDramas = function(dramas) { window._localDramas = dramas; };
 
 /* [END SECTION: SIDEBAR JS] */
 

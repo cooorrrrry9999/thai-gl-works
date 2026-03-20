@@ -997,6 +997,7 @@ function updateAuthUI() {
     // 画像作成ボタンを表示
     document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = '');
     document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = '');
+    document.getElementById('sb-shareimg-divider')?.style && (document.getElementById('sb-shareimg-divider').style.display = '');
     if (currentUser.photoURL) { avatar.src = currentUser.photoURL; avatar.style.display='block'; }
     else avatar.style.display = 'none';
     name.textContent = currentUser.displayName || currentUser.email;
@@ -1005,6 +1006,7 @@ function updateAuthUI() {
     loginBtn.style.display = 'flex'; userPanel.style.display = 'none';
     document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = 'none');
     document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = 'none');
+    document.getElementById('sb-shareimg-divider')?.style && (document.getElementById('sb-shareimg-divider').style.display = 'none');
   }
 }
 function showUserFilters(on) {
@@ -2742,40 +2744,18 @@ textarea:focus{border-color:var(--lav);}
 
     <div class="sb-body">
 
-      <!-- 作品を探す -->
-      <div class="sb-section-label">作品を探す</div>
+      <!-- 作品 -->
+      <div class="sb-section-label">作品</div>
 
       <button class="sb-item active" id="sb-all" onclick="sbNav('all')">
         <span class="sb-icon si-purple">🎬</span>
         <span>作品を探す</span>
       </button>
-
-      <hr class="sb-divider">
-
-      <!-- マイリスト（ログイン限定） -->
-      <div class="sb-section-label">マイリスト</div>
-
       <button class="sb-item" id="sb-mylist" onclick="sbNav('mylist')">
         <span class="sb-icon si-teal">👤</span>
         <span>マイリスト</span>
         <span class="sb-badge b-purple" id="sb-watched-count" style="display:none">0</span>
       </button>
-
-      <hr class="sb-divider">
-
-      <!-- 画像を作る（ログイン時のみ） -->
-      <div class="sb-section-label" id="sb-shareimg-section" style="display:none">マイリストを共有</div>
-      <button class="sb-item" id="sb-shareimg" style="display:none" onclick="window.openShareImgModal()">
-        <span class="sb-icon si-rose">📸</span>
-        <span>画像を作る</span>
-        <span class="sb-badge b-pink">NEW</span>
-      </button>
-
-      <hr class="sb-divider">
-
-      <!-- Coryの視聴リスト -->
-      <div class="sb-section-label">🐶 Coryの視聴リスト</div>
-
       <button class="sb-item" id="sb-cory" onclick="sbNav('cory')">
         <span class="sb-icon si-pink">🐶</span>
         <span>Coryの視聴リスト</span>
@@ -2783,8 +2763,8 @@ textarea:focus{border-color:var(--lav);}
 
       <hr class="sb-divider">
 
-      <!-- ThaiGLタレント名鑑 -->
-      <div class="sb-section-label">ThaiGLタレント名鑑</div>
+      <!-- タレント名鑑 -->
+      <div class="sb-section-label">タレント名鑑</div>
 
       <a class="sb-item" href="talents.html">
         <span class="sb-icon si-teal">👩</span>
@@ -2793,6 +2773,16 @@ textarea:focus{border-color:var(--lav);}
 
       <hr class="sb-divider">
 
+      <!-- マイリストを共有する（ログイン時のみ） -->
+      <div class="sb-section-label" id="sb-shareimg-section" style="display:none">マイリストを共有する</div>
+      <button class="sb-item" id="sb-shareimg" style="display:none" onclick="window.openShareImgModal()">
+        <span class="sb-icon si-rose">📸</span>
+        <span>画像を作る</span>
+        <span class="sb-badge b-pink">NEW</span>
+      </button>
+
+      <hr class="sb-divider" id="sb-shareimg-divider" style="display:none">
+
       <!-- 次何見る？ -->
       <div class="sb-section-label">次何見る？</div>
 
@@ -2800,21 +2790,6 @@ textarea:focus{border-color:var(--lav);}
         <span class="sb-icon si-gold">🎲</span>
         <span>次何見る？</span>
         <span class="sb-badge b-gold">準備中</span>
-      </button>
-
-      <hr class="sb-divider">
-
-      <!-- 管理者（管理者のみ表示） -->
-      <div class="sb-section-label admin-only" id="sb-admin-section" style="display:none">管理者</div>
-
-      <button class="sb-item admin-only" id="sb-admin-add" style="display:none" onclick="openAdminAdd()">
-        <span class="sb-icon si-gold">＋</span>
-        <span>作品を追加</span>
-      </button>
-      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
-        <span class="sb-icon si-gold">⬆</span>
-        <span>データ移行</span>
-        <span class="sb-badge b-gold">管理者</span>
       </button>
 
       <hr class="sb-divider">
@@ -2851,6 +2826,10 @@ textarea:focus{border-color:var(--lav);}
       <button class="sb-item admin-only" style="display:none" onclick="bulkLinkTalents()">
         <span class="sb-icon si-gold">🔗</span>
         <span>talent_id 一括紐付け</span>
+      </button>
+      <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
+        <span class="sb-icon si-gold">⬆</span>
+        <span>データ移行</span>
       </button>
 
       <!-- Ko-fi ドネーションボタン -->
@@ -3147,6 +3126,7 @@ textarea:focus{border-color:var(--lav);}
     </div>
     <div class="am-footer">
       <button class="am-cancel" onclick="window.closeShareImgModal()">閉じる</button>
+      <button class="am-cancel" id="sig-clear-btn" style="display:none;border-color:rgba(232,84,122,.3);color:var(--rl)" onclick="window.clearShareImg()">🗑 クリア</button>
       <button class="am-save" id="sig-save-btn" style="display:none" onclick="window.saveShareImg()">💾 画像を保存</button>
       <button class="am-save" id="sig-x-btn" style="display:none;background:rgba(0,0,0,.3);border-color:rgba(255,255,255,.2);color:#fff" onclick="window.shareToX()">𝕏 Xで共有</button>
     </div>
@@ -3618,6 +3598,7 @@ window.generateShareImg = async function() {
 
   document.getElementById('sig-save-btn').style.display = '';
   document.getElementById('sig-x-btn').style.display = '';
+  document.getElementById('sig-clear-btn').style.display = '';
 };
 
 // ── Canvas描画：カード形式（1200×630） ───────────────────────────────
@@ -3745,7 +3726,8 @@ async function drawGridImage(canvas, list) {
   ctx.font = "bold 36px 'DM Serif Display', Georgia, serif";
   ctx.textAlign = 'center';
   const status = document.getElementById('sig-status')?.value || '';
-  ctx.fillText((status || '視聴') + '済み作品 🐶', W/2, 60);
+  const titleLabel = status ? status + '作品 🐶' : 'マイリスト 🐶';
+  ctx.fillText(titleLabel, W/2, 60);
 
   const cols = list.length <= 4 ? 2 : list.length <= 6 ? 3 : list.length <= 9 ? 3 : 4;
   const rows = Math.ceil(list.length / cols);
@@ -3792,17 +3774,32 @@ async function drawGridImage(canvas, list) {
     ctx.clip();
 
     // テキスト領域
-    const th = cellH * 0.38, ty2 = y + cellH * 0.62 + 10;
+    const fontSize = Math.max(11, Math.min(15, cellW / 11));
+    const ty2 = y + cellH * 0.62 + 10;
     ctx.fillStyle = '#f0e8f8';
-    ctx.font = `bold ${Math.max(12, Math.min(16, cellW/10))}px sans-serif`;
+    ctx.font = `bold ${fontSize}px sans-serif`;
     ctx.textAlign = 'left';
-    wrapText(ctx, d.title, x + 8, ty2, cellW - 16, 20, true, 2);
+    const titleLines = wrapText(ctx, d.title, x + 8, ty2, cellW - 16, fontSize + 4, true, 2);
+    let infoY = ty2 + titleLines * (fontSize + 4) + 4;
 
     // 評価
     if (udata.rate) {
       ctx.fillStyle = '#d4a843';
-      ctx.font = `bold ${Math.max(11,Math.min(14,cellW/12))}px sans-serif`;
-      ctx.fillText('⭐ ' + udata.rate, x + 8, y + cellH - 14);
+      ctx.font = `bold ${fontSize - 1}px sans-serif`;
+      ctx.fillText('⭐ ' + udata.rate, x + 8, infoY);
+      infoY += fontSize + 2;
+    }
+
+    // メモ（1行まで）
+    if (udata.memo && infoY < y + cellH - 8) {
+      ctx.fillStyle = 'rgba(180,160,210,.7)';
+      ctx.font = `${fontSize - 2}px sans-serif`;
+      const maxMemoW = cellW - 16;
+      const memo = udata.memo.replace(/\n/g, ' ');
+      const memoText = ctx.measureText(memo).width > maxMemoW
+        ? memo.slice(0, Math.floor(memo.length * maxMemoW / ctx.measureText(memo).width) - 1) + '…'
+        : memo;
+      ctx.fillText(memoText, x + 8, infoY);
     }
     ctx.restore();
   }
@@ -3912,6 +3909,19 @@ function drawLogo(ctx, W, H) {
   ctx.textAlign = 'right';
   ctx.fillText("🌸 Cory's GL Guide", W - 24, H - 20);
 }
+
+window.clearShareImg = function() {
+  const canvas = document.getElementById('sig-canvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  document.getElementById('sig-preview').style.display = 'none';
+  document.getElementById('sig-save-btn').style.display = 'none';
+  document.getElementById('sig-x-btn').style.display = 'none';
+  document.getElementById('sig-clear-btn').style.display = 'none';
+  document.getElementById('sig-count-info').textContent = '';
+};
 
 window.saveShareImg = function() {
   const canvas = document.getElementById('sig-canvas');

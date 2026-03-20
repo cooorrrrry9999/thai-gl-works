@@ -3510,7 +3510,7 @@ window.updateSidebarState = function updateSidebarState() {
 }
 
 // 折りたたみ状態を復元
-(function() {
+;(function() {
   try {
     if (localStorage.getItem('sbCollapsed') === '1') {
       const sb = document.getElementById('sidebar');

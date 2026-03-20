@@ -1385,7 +1385,7 @@ function card(d, listMode) {
 
   // ── バッジ ────────────────────────────────────────────────────────────
   const subBadge     = sub    ? `<span class="slabel">BLサブカプ</span>` : '';
-  const watchedBadge = ud.status === '視聴済み' ? `<span class="wlabel">視聴済</span>` : '';
+  const watchedBadge = ''; // 視聴済バッジは廃止（cmeta行のStatusタグに統合）
   const upBadge      = isUp   ? `<span class="utag">予定</span>` : '';
 
   // ── モード別の追加表示 ────────────────────────────────────────────────
@@ -1397,8 +1397,8 @@ function card(d, listMode) {
   // マイリスト：自分の評価 ＋ みんなの平均 ＋ メモ
   const myRateHtml = (mode === 'mylist')
     ? `<div class="card-rates-row">
-        ${ud.rate ? `<span class="card-myrate">⭐ ${ud.rate}</span>` : ''}
         ${d.user_rate_avg ? `<span class="card-avgrate">👥 ★${d.user_rate_avg}<span class="urate-count">(${d.user_rate_count||0})</span></span>` : ''}
+        ${ud.rate ? `<span class="card-myrate">⭐ ${ud.rate}</span>` : ''}
        </div>`
     : '';
   const myMemoHtml = (mode === 'mylist' && ud.memo)
@@ -1410,9 +1410,9 @@ function card(d, listMode) {
     ? Math.round(d.recommend * d.beginner_score * 10) / 10 : null;
   const coryRateHtml = (mode === 'cory')
     ? `<div class="card-rates-row">
-        ${coryPt ? `<span class="card-corypt">🐶 ${coryPt}<span style="font-size:9px;opacity:.7">/25</span></span>` : ''}
         ${d.user_rate_avg ? `<span class="card-avgrate">👥 ★${d.user_rate_avg}<span class="urate-count">(${d.user_rate_count||0})</span></span>` : ''}
         ${ud.rate ? `<span class="card-myrate">⭐ ${ud.rate}</span>` : ''}
+        ${coryPt ? `<span class="card-corypt">🐶 ${coryPt}<span style="font-size:9px;opacity:.7">/25</span></span>` : ''}
        </div>
        ${d.comment ? `<div class="card-memo card-cory-memo">${d.comment}</div>` : ''}`
     : '';

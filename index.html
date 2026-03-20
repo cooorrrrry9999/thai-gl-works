@@ -1497,7 +1497,8 @@ function card(d, listMode) {
             <div class="cmeta list-cmeta">
               <div class="list-status-row">
                 <span class="tag st-${stCls}">${status}</span>
-                ${ud.status ? `<span class="tag list-ustatus">${ud.status}</span>` : ''}
+                ${ud.status ? `<span class="tag card-ustag">${ud.status}</span>` : ''}
+                ${mode === 'cory' && d.cory_status && d.cory_status !== '未視聴' ? `<span class="tag card-corytag">🐶 ${d.cory_status}</span>` : ''}
               </div>
               <div class="list-btns">${userBtns}${adminBtns}</div>
             </div>
@@ -1523,6 +1524,8 @@ function card(d, listMode) {
           ? `<div class="csyno">${d.synopsis}</div>` : ''}
         <div class="cmeta">
           <span class="tag st-${stCls}">${status}</span>
+          ${ud.status ? `<span class="tag card-ustag">${ud.status}</span>` : ''}
+          ${mode === 'cory' && d.cory_status && d.cory_status !== '未視聴' ? `<span class="tag card-corytag">🐶 ${d.cory_status}</span>` : ''}
         </div>
         ${coryRateHtml}
         ${userAvgHtml}
@@ -2102,6 +2105,8 @@ select option{background:var(--dark2);}
 .list-cmeta{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;}
 .list-status-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
 .list-ustatus{background:rgba(155,126,200,.12);border-color:rgba(155,126,200,.25);color:var(--ll);}
+.card-ustag{background:rgba(100,200,180,.1);border:1px solid rgba(100,200,180,.25);color:#7ecfc0;font-size:10px;padding:2px 7px;border-radius:8px;}
+.card-corytag{background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.25);color:var(--rl);font-size:10px;padding:2px 7px;border-radius:8px;}
 .list-btns{display:flex;gap:4px;align-items:center;}
 .recdots{display:flex;gap:2px;}
 .rdot{width:6px;height:6px;border-radius:50%;background:rgba(232,84,122,.15);}
@@ -2777,7 +2782,7 @@ textarea:focus{border-color:var(--lav);}
       <div class="sb-section-label" id="sb-shareimg-section" style="display:none">マイリストを共有する</div>
       <button class="sb-item" id="sb-shareimg" style="display:none" onclick="window.openShareImgModal()">
         <span class="sb-icon si-rose">📸</span>
-        <span>画像を作る</span>
+        <span>マイリストを共有する</span>
         <span class="sb-badge b-pink">NEW</span>
       </button>
 
@@ -2954,16 +2959,6 @@ textarea:focus{border-color:var(--lav);}
       <button class="filter-btn" id="fbtn-status" onclick="toggleDropdown('dd-status')">放送Status ▾</button>
       <div class="multi-dropdown" id="dd-status"></div>
     </div>
-    <!-- 制作会社（インクリメンタルサーチ） -->
-    <div class="multi-select-wrap">
-      <button class="filter-btn" id="fbtn-studio" onclick="toggleDropdown('dd-studio')">制作会社 ▾</button>
-      <div class="multi-dropdown" id="dd-studio" style="min-width:180px"></div>
-    </div>
-    <!-- 放送年 -->
-    <div class="multi-select-wrap">
-      <button class="filter-btn" id="fbtn-year" onclick="toggleDropdown('dd-year')">放送年 ▾</button>
-      <div class="multi-dropdown" id="dd-year"></div>
-    </div>
     <!-- 視聴Status（モード別に動的表示） -->
     <div class="multi-select-wrap" id="wrap-ustatus" style="display:none">
       <button class="filter-btn" id="fbtn-ustatus" onclick="toggleDropdown('dd-ustatus')">視聴Status ▾</button>
@@ -2973,6 +2968,16 @@ textarea:focus{border-color:var(--lav);}
     <div class="multi-select-wrap" id="wrap-cstatus" style="display:none">
       <button class="filter-btn" id="fbtn-cstatus" onclick="toggleDropdown('dd-cstatus')">Coryの状況 ▾</button>
       <div class="multi-dropdown" id="dd-cstatus"></div>
+    </div>
+    <!-- 制作会社（インクリメンタルサーチ） -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-studio" onclick="toggleDropdown('dd-studio')">制作会社 ▾</button>
+      <div class="multi-dropdown" id="dd-studio" style="min-width:180px"></div>
+    </div>
+    <!-- 放送年 -->
+    <div class="multi-select-wrap">
+      <button class="filter-btn" id="fbtn-year" onclick="toggleDropdown('dd-year')">放送年 ▾</button>
+      <div class="multi-dropdown" id="dd-year"></div>
     </div>
     <!-- 選択中タグ & リセット -->
     <div id="filter-tags"></div>

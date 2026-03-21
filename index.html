@@ -40,6 +40,55 @@ let PAID_OPTIONS     = ['無料','有料','一部無料'];
 let RELATION_OPTIONS = ['先輩後輩','同い年','歳の差','同世代','関係なし','不明'];
 const WATCH_STATUS   = ['未視聴','視聴中','視聴済み','Drop out'];
 
+// ── キャッシュ定数・関数（loadSettingsより前に定義必須） ─────────────────
+const CACHE_KEY_DRAMAS   = 'glguide_dramas_v2';
+const CACHE_KEY_TALENTS  = 'glguide_talents_v2';
+const CACHE_KEY_SETTINGS = 'glguide_settings_v2';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24時間
+
+function _saveCache(key, data) {
+  try {
+    const json = JSON.stringify({ ts: Date.now(), data });
+    if (json.length > 2 * 1024 * 1024) return;
+    localStorage.setItem(key, json);
+  } catch(e) {
+    try {
+      [CACHE_KEY_DRAMAS, CACHE_KEY_TALENTS, CACHE_KEY_SETTINGS].forEach(k => {
+        if (k !== key) localStorage.removeItem(k);
+      });
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+    } catch(e2) {}
+  }
+}
+function _loadCache(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (!Array.isArray(data) || data.length === 0) { localStorage.removeItem(key); return null; }
+    if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
+    return data;
+  } catch(e) {
+    try { localStorage.removeItem(key); } catch(e2) {}
+    return null;
+  }
+}
+function _saveCacheObj(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+}
+function _loadCacheObj(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
+    return data;
+  } catch(e) {
+    try { localStorage.removeItem(key); } catch(e2) {}
+    return null;
+  }
+}
+
 // ── 設定データをFirestoreから読み込む ─────────────────────────────────
 async function loadSettings() {
   // キャッシュがあれば使う
@@ -239,56 +288,6 @@ async function saveUserDoc() {
 }
 
 // ── DRAMA DATA ─────────────────────────────────────────────────────────
-// ── キャッシュ定数 ────────────────────────────────────────────────────
-const CACHE_KEY_DRAMAS   = 'glguide_dramas_v2';
-const CACHE_KEY_TALENTS  = 'glguide_talents_v2';
-const CACHE_KEY_SETTINGS = 'glguide_settings_v2';
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24時間キャッシュ
-
-function _saveCache(key, data) {
-  try {
-    const json = JSON.stringify({ ts: Date.now(), data });
-    // 2MB超の場合は保存スキップ（localStorage容量保護）
-    if (json.length > 2 * 1024 * 1024) return;
-    localStorage.setItem(key, json);
-  } catch(e) {
-    // 容量超過の場合は古いキャッシュをクリアして再試行
-    try {
-      ['glguide_dramas_v2','glguide_talents_v2','glguide_settings_v2'].forEach(k => {
-        if (k !== key) localStorage.removeItem(k);
-      });
-      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
-    } catch(e2) {}
-  }
-}
-function _loadCache(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const { ts, data } = JSON.parse(raw);
-    if (!Array.isArray(data) || data.length === 0) { localStorage.removeItem(key); return null; }
-    if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
-    return data;
-  } catch(e) {
-    try { localStorage.removeItem(key); } catch(e2) {}
-    return null;
-  }
-}
-function _saveCacheObj(key, data) {
-  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
-}
-function _loadCacheObj(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const { ts, data } = JSON.parse(raw);
-    if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
-    return data;
-  } catch(e) {
-    try { localStorage.removeItem(key); } catch(e2) {}
-    return null;
-  }
-}
 
 async function loadDramasFromDB() {
   if (!isAdmin) {

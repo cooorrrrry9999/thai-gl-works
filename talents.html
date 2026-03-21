@@ -181,9 +181,6 @@ function render() {
                onerror="this.parentElement.innerHTML='<div class=tcard-initial>${initial}</div>'">`
           : `<div class="tcard-initial">${initial}</div>`}
         ${isAdmin ? `<button class="tcard-edit-btn" onclick="openEdit('${t._id}',event)">✏</button>` : ''}
-        <button class="tcard-share-btn" onclick="shareTalentCard('${t._id}',event)" title="共有">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        </button>
       </div>
       <div class="tcard-body">
         <div class="tcard-nickname">${t.nickname || '─'}</div>
@@ -266,6 +263,9 @@ window.openDetail = id => {
 
   document.getElementById('detailOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
+  // 共有ボタンにIDをセット
+  const sw = document.getElementById('detailShareWrap');
+  if (sw) sw.dataset.talentId = id;
 };
 
 window.closeDetail = () => {
@@ -430,10 +430,14 @@ function updateAuthUI() {
     else avatar.style.display = 'none';
     name.textContent = currentUser.displayName || currentUser.email;
     badge.style.display = isAdmin ? 'inline-block' : 'none';
-    // マイリスト共有ボタンを表示
+    // マイリスト共有ボタンを表示・ログインヒントを非表示
     document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = '');
     document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = '');
     document.getElementById('sb-shareimg-divider')?.style && (document.getElementById('sb-shareimg-divider').style.display = '');
+    const hint = document.getElementById('sb-shareimg-login-hint');
+    if (hint) hint.style.display = 'none';
+    const hintDiv = document.getElementById('sb-shareimg-login-divider');
+    if (hintDiv) hintDiv.style.display = 'none';
   } else {
     loginBtn.style.display  = 'flex';
     userPanel.style.display = 'none';
@@ -520,55 +524,94 @@ window._showToastFallback = function(msg, type) {
   clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000);
 };
 
-// ── タレントカード共有ボタン ───────────────────────────────────────────
+// ── タレント共有（詳細モーダル内ボタン） ──────────────────────────────
+window.shareTalentFromModal = function(e) {
+  e && e.stopPropagation();
+  const sw = document.getElementById('detailShareWrap');
+  const id = sw?.dataset?.talentId;
+  const t = id ? talents.find(x => x._id === id) : null;
+  if (!t) return;
+  _showTalentShareMenu(e.currentTarget || e.target, t);
+};
+
 window.shareTalentCard = function(id, e) {
   e && e.stopPropagation();
   const t = talents.find(x => x._id === id);
   if (!t) return;
-  const url = location.origin + location.pathname + '?talent=' + encodeURIComponent(id);
-  const text = encodeURIComponent((t.nickname || '') + ' | Cory\'s GL Guide ' + location.origin + location.pathname);
+  _showTalentShareMenu(e.currentTarget || e.target, t);
+};
 
-  // ネイティブシェアAPIが使えるか（主にスマホ）
+function _showTalentShareMenu(btn, t) {
+  // スマホはネイティブシェアAPI
+  const pageUrl = location.origin + location.pathname;
   if (navigator.share) {
-    navigator.share({ title: t.nickname || '', url: location.origin + location.pathname + '?talent=' + id })
+    navigator.share({ title: t.nickname || '', text: t.nickname + ' | Cory\'s GL Guide', url: pageUrl })
       .catch(() => {});
     return;
   }
 
-  // フォールバック：シェアメニューを表示
   const existing = document.getElementById('talent-share-popup');
-  if (existing) existing.remove();
+  if (existing) { existing.remove(); return; }
 
   const popup = document.createElement('div');
   popup.id = 'talent-share-popup';
   popup.style.cssText = `position:fixed;z-index:9999;background:#1e1230;border:1px solid rgba(155,126,200,.3);
-    border-radius:10px;padding:8px 0;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:160px;font-size:13px;`;
+    border-radius:10px;padding:8px 0;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:165px;font-size:13px;`;
 
-  const rect = e.target.closest('button').getBoundingClientRect();
-  popup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 140) + 'px';
-  popup.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
+  const rect = btn.getBoundingClientRect();
+  const top = Math.min(rect.bottom + 6, window.innerHeight - 120);
+  const left = Math.min(rect.left, window.innerWidth - 185);
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+
+  const xText = encodeURIComponent((t.nickname || '') + ' | Cory\'s GL Guide ' + pageUrl);
+  const lineUrl = 'https://social-plugins.line.me/lineit/share?url=' + encodeURIComponent(pageUrl);
 
   popup.innerHTML = `
-    <div style="padding:6px 14px 4px;font-size:10px;color:rgba(155,126,200,.6);text-transform:uppercase;letter-spacing:.08em">${t.nickname || ''}</div>
-    <button onclick="window.open('https://x.com/intent/tweet?text=${text}','_blank');document.getElementById('talent-share-popup').remove()"
-      style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
+    <div style="padding:5px 14px 4px;font-size:10px;color:rgba(155,126,200,.55);text-transform:uppercase;letter-spacing:.08em">${t.nickname || ''}</div>
+    <button id="tsp-x"
+      style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
       onmouseover="this.style.background='rgba(155,126,200,.1)'" onmouseout="this.style.background='none'">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
       X でシェア
     </button>
-    <button onclick="navigator.clipboard.writeText('${location.origin + location.pathname}').then(()=>{showToast('URLをコピーしました ✓');document.getElementById('talent-share-popup').remove()})"
-      style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
+    <button id="tsp-line"
+      style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
+      onmouseover="this.style.background='rgba(155,126,200,.1)'" onmouseout="this.style.background='none'">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.630 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.630 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+      LINE でシェア
+    </button>
+    <button id="tsp-copy"
+      style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
       onmouseover="this.style.background='rgba(155,126,200,.1)'" onmouseout="this.style.background='none'">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       URLをコピー
     </button>`;
 
   document.body.appendChild(popup);
+
+  popup.querySelector('#tsp-x').onclick = () => {
+    window.open('https://x.com/intent/tweet?text=' + xText, '_blank');
+    popup.remove();
+  };
+  popup.querySelector('#tsp-line').onclick = () => {
+    window.open(lineUrl, '_blank');
+    popup.remove();
+  };
+  popup.querySelector('#tsp-copy').onclick = () => {
+    navigator.clipboard.writeText(pageUrl).then(() => {
+      showToast('URLをコピーしました ✓');
+    }).catch(() => {
+      showToast('コピーに失敗しました', 'error');
+    });
+    popup.remove();
+  };
+
   setTimeout(() => document.addEventListener('click', function rm() {
     document.getElementById('talent-share-popup')?.remove();
     document.removeEventListener('click', rm);
   }), 100);
-};
+}
 
 // ── マイリスト画像作成（talents.htmlから直接開く） ──────────────────────
 window.openTalentShareImgModal = function() {
@@ -576,19 +619,20 @@ window.openTalentShareImgModal = function() {
     showToast('ログインが必要です', 'warn');
     return;
   }
-  // Firestoreからユーザーデータとドラマデータを取得して画像作成モーダルを開く
-  // index.htmlに飛ばずにここで処理する
-  window._talentShareDramas = window._talentShareDramas || dramas;
-  window._talentShareUserDoc = window._talentShareUserDoc || { dramas: {} };
+  // 毎回ユーザーデータをリフレッシュ
+  window._talentShareUserDoc = null;
 
-  // ユーザーデータを取得（まだなければFirestoreから）
   _ensureTalentShareData().then(() => {
     const modal = document.getElementById('talentShareImgModal');
     if (!modal) return;
     modal.classList.add('open');
     // フィルター選択肢を生成
     const allDramas = window._talentShareDramas || [];
-    const years = [...new Set(allDramas.map(d=>d.year||'未定').filter(y=>y!=='未定'))].sort((a,b)=>b-a);
+    const years = [...new Set(allDramas.map(d => {
+      const y = d.year ? String(d.year) : '';
+      if (!y || y === '9999' || !d.release_start || d.release_start === '未定') return '未定';
+      return y;
+    }).filter(y => y !== '未定'))].sort((a,b) => b - a);
     const studios = [...new Set(allDramas.map(d=>d.studio||'').filter(Boolean))].sort();
     const ySel = document.getElementById('tsig-year');
     const sSel = document.getElementById('tsig-studio');
@@ -599,22 +643,20 @@ window.openTalentShareImgModal = function() {
 };
 
 async function _ensureTalentShareData() {
-  // ユーザーデータ取得
+  // dramas は loadAll() で既に読み込み済み
+  window._talentShareDramas = dramas;
+  // ユーザーデータをFirestoreから取得（まだなければ）
   if (!window._talentShareUserDoc || !window._talentShareUserDoc._loaded) {
     try {
-      const { getFirestore, doc, getDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      // dramas は既に loadAll() で読み込み済み
-      window._talentShareDramas = dramas;
-      // userDoc はFirestoreから再取得
       if (currentUser) {
-        const db2 = getFirestore();
-        const snap = await getDoc(doc(db2, 'users', currentUser.uid));
+        const snap = await getDoc(doc(db, 'users', currentUser.uid));
         window._talentShareUserDoc = snap.exists() ? snap.data() : { dramas: {} };
         if (!window._talentShareUserDoc.dramas) window._talentShareUserDoc.dramas = {};
         window._talentShareUserDoc._loaded = true;
+      } else {
+        window._talentShareUserDoc = { dramas: {}, _loaded: true };
       }
     } catch(e) {
-      window._talentShareDramas = dramas;
       window._talentShareUserDoc = { dramas: {}, _loaded: true };
     }
   }
@@ -1057,6 +1099,11 @@ select option{background:var(--dark2);}
   border:1px solid rgba(155,126,200,.2);border-radius:50%;width:28px;height:28px;
   display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:14px;transition:all .2s;z-index:2;}
 .mclose:hover{background:rgba(232,84,122,.2);color:var(--rl);}
+.detail-share-wrap{position:absolute;top:13px;right:50px;z-index:2;}
+.detail-share-btn{background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);
+  border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--muted);transition:all .2s;}
+.detail-share-btn:hover{background:rgba(155,126,200,.25);color:var(--ll);}
 
 .detail-layout{display:grid;grid-template-columns:200px 1fr;}
 .detail-img-col{padding:22px 0 22px 22px;}
@@ -1274,6 +1321,7 @@ select option{background:var(--dark2);}
       </a>
       <a class="sb-item" href="index.html#mylist">
         <span class="sb-icon si-teal">👤</span><span>マイリスト</span>
+        <span class="sb-badge b-purple" style="margin-left:auto">要ログイン</span>
       </a>
       <a class="sb-item" href="index.html#cory">
         <span class="sb-icon si-pink">🐶</span><span>Coryの視聴リスト</span>
@@ -1296,6 +1344,16 @@ select option{background:var(--dark2);}
         <span class="sb-badge b-pink">NEW</span>
       </button>
       <hr class="sb-divider" id="sb-shareimg-divider" style="display:none">
+
+      <!-- ログイン前は「マイリストを共有する」の代わりに説明を表示 -->
+      <div id="sb-shareimg-login-hint" style="">
+        <div class="sb-section-label">マイリストを共有する</div>
+        <div class="sb-item" style="cursor:default;opacity:.55;font-size:11px;padding:5px 12px 8px;color:var(--muted);white-space:normal;line-height:1.5">
+          <span class="sb-icon si-rose" style="flex-shrink:0">📸</span>
+          <span>ログイン後に利用できます</span>
+        </div>
+      </div>
+      <hr class="sb-divider" id="sb-shareimg-login-divider">
 
       <!-- 次何見る？ -->
       <div class="sb-section-label">次何見る？</div>
@@ -1396,6 +1454,12 @@ select option{background:var(--dark2);}
 <div class="overlay" id="detailOverlay" onclick="event.target===this&&closeDetail()">
   <div class="modal">
     <button class="mclose" onclick="closeDetail()">✕</button>
+    <!-- 共有ボタン（モーダル右上） -->
+    <div class="detail-share-wrap" id="detailShareWrap">
+      <button class="detail-share-btn" onclick="shareTalentFromModal(event)" title="共有">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </button>
+    </div>
     <div class="detail-layout">
       <div class="detail-img-col"><div id="detailImgWrap"></div></div>
       <div class="detail-info-col">

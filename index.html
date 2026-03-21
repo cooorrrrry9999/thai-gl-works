@@ -1002,6 +1002,14 @@ function updateAuthUI() {
     document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = '');
     document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = '');
     document.getElementById('sb-shareimg-divider')?.style && (document.getElementById('sb-shareimg-divider').style.display = '');
+    // ログイン必須バッジを非表示
+    const loginBadge = document.getElementById('sb-mylist-login-badge');
+    if (loginBadge) loginBadge.style.display = 'none';
+    // 共有ログインヒントを非表示
+    const shareHint = document.getElementById('sb-shareimg-login-hint');
+    if (shareHint) shareHint.style.display = 'none';
+    const shareHintDiv = document.getElementById('sb-shareimg-login-divider');
+    if (shareHintDiv) shareHintDiv.style.display = 'none';
     if (currentUser.photoURL) { avatar.src = currentUser.photoURL; avatar.style.display='block'; }
     else avatar.style.display = 'none';
     name.textContent = currentUser.displayName || currentUser.email;
@@ -1152,14 +1160,19 @@ function go() {
   let l = [...localDramas];
   // マイリストフィルター
   // マイリストモード：userDoc.dramasにキーが存在する作品（status/rate/memoのいずれかが設定済み）
-  if (CARD_MODE === 'mylist') l = l.filter(d => {
-    const key = String(d._id||d.title);
-    const u = userDoc.dramas?.[key];
-    // キーが存在し、status（空文字含む）・rate・memoのいずれかが設定されているか
-    // rate===0 も「設定済み」として扱うため hasOwnProperty で確認
-    if (!u) return false;
-    return Object.keys(u).length > 0; // 何かフィールドがあれば表示
-  });
+  if (CARD_MODE === 'mylist') {
+    const dramaKeys = Object.keys(userDoc.dramas || {});
+    l = l.filter(d => {
+      const idStr  = String(d._id  ?? '');
+      const titStr = String(d.title ?? '');
+      // _id（文字列）・_id（数値→文字列）・titleのいずれかがuserDoc.dramasのキーと一致するか
+      const matched = dramaKeys.some(k => k === idStr || k === titStr);
+      if (!matched) return false;
+      const key = dramaKeys.find(k => k === idStr || k === titStr);
+      const u = userDoc.dramas[key];
+      return u && Object.keys(u).length > 0;
+    });
+  }
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 
   // フィルター条件：
@@ -1197,7 +1210,13 @@ function go() {
     l = l.filter(d => FILTER_STATUS.some(v => v === calcStatus(d)));
   }
   if (FILTER_USER_STATUS.length > 0) {
-    l = l.filter(d => FILTER_USER_STATUS.some(v => v === (userDoc.dramas?.[String(d._id||d.title)]?.status || '未視聴')));
+    const dramaKeys2 = Object.keys(userDoc.dramas || {});
+    l = l.filter(d => {
+      const idStr = String(d._id ?? ''), titStr = String(d.title ?? '');
+      const key = dramaKeys2.find(k => k === idStr || k === titStr);
+      const status = key ? (userDoc.dramas[key]?.status || '未視聴') : '未視聴';
+      return FILTER_USER_STATUS.some(v => v === status);
+    });
   }
   if (FILTER_CORY_STATUS.length > 0) {
     l = l.filter(d => FILTER_CORY_STATUS.some(v => v === (d.cory_status || '未視聴')));
@@ -2787,6 +2806,7 @@ textarea:focus{border-color:var(--lav);}
         <span class="sb-icon si-teal">👤</span>
         <span>マイリスト</span>
         <span class="sb-badge b-purple" id="sb-watched-count" style="display:none">0</span>
+        <span class="sb-badge b-purple" id="sb-mylist-login-badge" style="font-size:8px">要ログイン</span>
       </button>
       <button class="sb-item" id="sb-cory" onclick="sbNav('cory')">
         <span class="sb-icon si-pink">🐶</span>
@@ -2812,8 +2832,17 @@ textarea:focus{border-color:var(--lav);}
         <span>マイリストを共有する</span>
         <span class="sb-badge b-pink">NEW</span>
       </button>
-
       <hr class="sb-divider" id="sb-shareimg-divider" style="display:none">
+
+      <!-- 未ログイン時の説明 -->
+      <div id="sb-shareimg-login-hint">
+        <div class="sb-section-label">マイリストを共有する</div>
+        <div class="sb-item" style="cursor:default;opacity:.55;font-size:11px;padding:5px 12px 8px;color:var(--muted);white-space:normal;line-height:1.5">
+          <span class="sb-icon si-rose" style="flex-shrink:0">📸</span>
+          <span>ログイン後に利用できます</span>
+        </div>
+      </div>
+      <hr class="sb-divider" id="sb-shareimg-login-divider">
 
       <!-- 次何見る？ -->
       <div class="sb-section-label">次何見る？</div>

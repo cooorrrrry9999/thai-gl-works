@@ -315,7 +315,7 @@ window.saveUserStatus = async (id, status) => {
   if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
   const key = String(id);
   if (!userDoc.dramas[key]) userDoc.dramas[key] = {};
-  userDoc.dramas[key].status = status;
+  userDoc.dramas[key].status = status || '未視聴'; // 空選択は「未視聴」として保存
   await saveUserDoc();
   render();
   renderModal(id);
@@ -1149,8 +1149,12 @@ document.addEventListener('DOMContentLoaded', () => {
 function go() {
   let l = [...localDramas];
   // マイリストフィルター
-  // マイリストモード：ステータスが登録されている作品のみ（F==='w'は廃止、CARD_MODEで制御）
-  if (CARD_MODE === 'mylist') l = l.filter(d => !!userDoc.dramas?.[String(d._id||d.title)]?.status);
+  // マイリストモード：userDoc.dramasにキーが存在する作品（status/rate/memoのいずれかが設定済み）
+  if (CARD_MODE === 'mylist') l = l.filter(d => {
+    const key = String(d._id||d.title);
+    const u = userDoc.dramas?.[key];
+    return u && (u.status || u.rate || u.memo);
+  });
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 
   // フィルター条件：
@@ -1466,8 +1470,8 @@ function card(d, listMode) {
     <select class="status-sel"
       onchange="saveUserStatus('${id}', this.value)"
       onclick="event.stopPropagation()">
-      <option value="">ステータス</option>
-      ${WATCH_STATUS.map(s =>
+      <option value="未視聴"${!ud.status || ud.status==='未視聴' ? ' selected' : ''}>未視聴</option>
+      ${WATCH_STATUS.filter(s=>s!=='未視聴').map(s =>
         `<option value="${s}"${ud.status === s ? ' selected' : ''}>${s}</option>`
       ).join('')}
     </select>` : '';

@@ -181,6 +181,9 @@ function render() {
                onerror="this.parentElement.innerHTML='<div class=tcard-initial>${initial}</div>'">`
           : `<div class="tcard-initial">${initial}</div>`}
         ${isAdmin ? `<button class="tcard-edit-btn" onclick="openEdit('${t._id}',event)">✏</button>` : ''}
+        <button class="tcard-share-btn" onclick="shareTalentCard('${t._id}',event)" title="共有">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </button>
       </div>
       <div class="tcard-body">
         <div class="tcard-nickname">${t.nickname || '─'}</div>
@@ -236,7 +239,7 @@ window.openDetail = id => {
             : ''}
           <div class="work-info">
             <div class="work-title">${d.title}</div>
-            ${d.release_start ? `<div class="work-year">${(d.release_start||'').slice(0,7)}</div>` : ''}
+            <div class="work-year">${d.release_start ? (d.release_start||'').slice(0,7) : '未定'}</div>
           </div>
           <span class="work-arrow">→</span>
         </div>`)
@@ -427,9 +430,16 @@ function updateAuthUI() {
     else avatar.style.display = 'none';
     name.textContent = currentUser.displayName || currentUser.email;
     badge.style.display = isAdmin ? 'inline-block' : 'none';
+    // マイリスト共有ボタンを表示
+    document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = '');
+    document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = '');
+    document.getElementById('sb-shareimg-divider')?.style && (document.getElementById('sb-shareimg-divider').style.display = '');
   } else {
     loginBtn.style.display  = 'flex';
     userPanel.style.display = 'none';
+    document.getElementById('sb-shareimg-section')?.style && (document.getElementById('sb-shareimg-section').style.display = 'none');
+    document.getElementById('sb-shareimg')?.style && (document.getElementById('sb-shareimg').style.display = 'none');
+    document.getElementById('sb-shareimg-divider')?.style && (document.getElementById('sb-shareimg-divider').style.display = 'none');
   }
 }
 
@@ -510,6 +520,354 @@ window._showToastFallback = function(msg, type) {
   clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000);
 };
 
+// ── タレントカード共有ボタン ───────────────────────────────────────────
+window.shareTalentCard = function(id, e) {
+  e && e.stopPropagation();
+  const t = talents.find(x => x._id === id);
+  if (!t) return;
+  const url = location.origin + location.pathname + '?talent=' + encodeURIComponent(id);
+  const text = encodeURIComponent((t.nickname || '') + ' | Cory\'s GL Guide ' + location.origin + location.pathname);
+
+  // ネイティブシェアAPIが使えるか（主にスマホ）
+  if (navigator.share) {
+    navigator.share({ title: t.nickname || '', url: location.origin + location.pathname + '?talent=' + id })
+      .catch(() => {});
+    return;
+  }
+
+  // フォールバック：シェアメニューを表示
+  const existing = document.getElementById('talent-share-popup');
+  if (existing) existing.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'talent-share-popup';
+  popup.style.cssText = `position:fixed;z-index:9999;background:#1e1230;border:1px solid rgba(155,126,200,.3);
+    border-radius:10px;padding:8px 0;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:160px;font-size:13px;`;
+
+  const rect = e.target.closest('button').getBoundingClientRect();
+  popup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 140) + 'px';
+  popup.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
+
+  popup.innerHTML = `
+    <div style="padding:6px 14px 4px;font-size:10px;color:rgba(155,126,200,.6);text-transform:uppercase;letter-spacing:.08em">${t.nickname || ''}</div>
+    <button onclick="window.open('https://x.com/intent/tweet?text=${text}','_blank');document.getElementById('talent-share-popup').remove()"
+      style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
+      onmouseover="this.style.background='rgba(155,126,200,.1)'" onmouseout="this.style.background='none'">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.91-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      X でシェア
+    </button>
+    <button onclick="navigator.clipboard.writeText('${location.origin + location.pathname}').then(()=>{showToast('URLをコピーしました ✓');document.getElementById('talent-share-popup').remove()})"
+      style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 14px;background:none;border:none;color:#f0e8f8;cursor:pointer;font-size:12px;font-family:inherit;text-align:left"
+      onmouseover="this.style.background='rgba(155,126,200,.1)'" onmouseout="this.style.background='none'">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      URLをコピー
+    </button>`;
+
+  document.body.appendChild(popup);
+  setTimeout(() => document.addEventListener('click', function rm() {
+    document.getElementById('talent-share-popup')?.remove();
+    document.removeEventListener('click', rm);
+  }), 100);
+};
+
+// ── マイリスト画像作成（talents.htmlから直接開く） ──────────────────────
+window.openTalentShareImgModal = function() {
+  if (!currentUser) {
+    showToast('ログインが必要です', 'warn');
+    return;
+  }
+  // Firestoreからユーザーデータとドラマデータを取得して画像作成モーダルを開く
+  // index.htmlに飛ばずにここで処理する
+  window._talentShareDramas = window._talentShareDramas || dramas;
+  window._talentShareUserDoc = window._talentShareUserDoc || { dramas: {} };
+
+  // ユーザーデータを取得（まだなければFirestoreから）
+  _ensureTalentShareData().then(() => {
+    const modal = document.getElementById('talentShareImgModal');
+    if (!modal) return;
+    modal.classList.add('open');
+    // フィルター選択肢を生成
+    const allDramas = window._talentShareDramas || [];
+    const years = [...new Set(allDramas.map(d=>d.year||'未定').filter(y=>y!=='未定'))].sort((a,b)=>b-a);
+    const studios = [...new Set(allDramas.map(d=>d.studio||'').filter(Boolean))].sort();
+    const ySel = document.getElementById('tsig-year');
+    const sSel = document.getElementById('tsig-studio');
+    if (ySel) ySel.innerHTML = '<option value="">すべて</option>' + years.map(y=>`<option value="${y}">${y}年</option>`).join('');
+    if (sSel) sSel.innerHTML = '<option value="">すべて</option>' + studios.map(s=>`<option value="${s}">${s}</option>`).join('');
+    _updateTsigCount();
+  });
+};
+
+async function _ensureTalentShareData() {
+  // ユーザーデータ取得
+  if (!window._talentShareUserDoc || !window._talentShareUserDoc._loaded) {
+    try {
+      const { getFirestore, doc, getDoc, collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      // dramas は既に loadAll() で読み込み済み
+      window._talentShareDramas = dramas;
+      // userDoc はFirestoreから再取得
+      if (currentUser) {
+        const db2 = getFirestore();
+        const snap = await getDoc(doc(db2, 'users', currentUser.uid));
+        window._talentShareUserDoc = snap.exists() ? snap.data() : { dramas: {} };
+        if (!window._talentShareUserDoc.dramas) window._talentShareUserDoc.dramas = {};
+        window._talentShareUserDoc._loaded = true;
+      }
+    } catch(e) {
+      window._talentShareDramas = dramas;
+      window._talentShareUserDoc = { dramas: {}, _loaded: true };
+    }
+  }
+}
+
+window.closeTalentShareImgModal = function() {
+  document.getElementById('talentShareImgModal')?.classList.remove('open');
+};
+
+window._updateTsigCount = function() {
+  const mode = document.getElementById('tsig-mode')?.value;
+  const wrap = document.querySelector('.tsig-count-wrap');
+  if (wrap) wrap.style.display = mode === 'card' ? 'none' : '';
+};
+
+function _getTsigDramas() {
+  const ud = window._talentShareUserDoc || { dramas: {} };
+  const allDramas = window._talentShareDramas || dramas;
+  const status  = document.getElementById('tsig-status')?.value || '';
+  const year    = document.getElementById('tsig-year')?.value || '';
+  const studio  = document.getElementById('tsig-studio')?.value || '';
+  const sort    = document.getElementById('tsig-sort')?.value || 'myrate';
+  const minrate = parseInt(document.getElementById('tsig-minrate')?.value || '0');
+  const mode    = document.getElementById('tsig-mode')?.value || 'card';
+  const count   = mode === 'card' ? 1 : parseInt(document.getElementById('tsig-count')?.value || '4');
+
+  let list = allDramas.filter(d => {
+    const key = String(d._id || d.title);
+    const udata = ud.dramas?.[key] || {};
+    if (!udata.status) return false;
+    if (status && udata.status !== status) return false;
+    if (year && (d.year || '未定') !== year) return false;
+    if (studio && (d.studio || '') !== studio) return false;
+    if (minrate > 0 && (udata.rate || 0) < minrate) return false;
+    return true;
+  });
+
+  list.sort((a, b) => {
+    const ka = String(a._id || a.title), kb = String(b._id || b.title);
+    const ua = ud.dramas?.[ka] || {}, ub = ud.dramas?.[kb] || {};
+    if (sort === 'myrate') return (ub.rate || 0) - (ua.rate || 0);
+    if (sort === 'new') return (b.sort_date || '0000').localeCompare(a.sort_date || '0000');
+    if (sort === 'old') return (a.sort_date || '9999').localeCompare(b.sort_date || '9999');
+    return 0;
+  });
+
+  return { list: list.slice(0, count), total: list.length };
+}
+
+window.generateTalentShareImg = async function() {
+  const { list, total } = _getTsigDramas();
+  const mode = document.getElementById('tsig-mode')?.value || 'card';
+  const preview = document.getElementById('tsig-preview');
+  const empty   = document.getElementById('tsig-empty');
+  const info    = document.getElementById('tsig-count-info');
+
+  if (!list.length) {
+    if (preview) preview.style.display = 'none';
+    if (empty)   empty.style.display = '';
+    document.getElementById('tsig-save-btn').style.display = 'none';
+    document.getElementById('tsig-x-btn').style.display = 'none';
+    document.getElementById('tsig-clear-btn').style.display = 'none';
+    return;
+  }
+  if (empty)   empty.style.display = 'none';
+  if (preview) preview.style.display = '';
+  if (info) info.textContent = `${total}件中 ${list.length}件を表示`;
+
+  const canvas = document.getElementById('tsig-canvas');
+  if (mode === 'card') {
+    await _drawTsigCardImage(canvas, list[0]);
+  } else {
+    await _drawTsigGridImage(canvas, list);
+  }
+
+  document.getElementById('tsig-save-btn').style.display = '';
+  document.getElementById('tsig-x-btn').style.display = '';
+  document.getElementById('tsig-clear-btn').style.display = '';
+};
+
+window.clearTalentShareImg = function() {
+  const canvas = document.getElementById('tsig-canvas');
+  if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+  document.getElementById('tsig-preview').style.display = 'none';
+  document.getElementById('tsig-save-btn').style.display = 'none';
+  document.getElementById('tsig-x-btn').style.display = 'none';
+  document.getElementById('tsig-clear-btn').style.display = 'none';
+  document.getElementById('tsig-count-info').textContent = '';
+};
+
+window.saveTalentShareImg = function() {
+  const canvas = document.getElementById('tsig-canvas');
+  if (!canvas) return;
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = 'cory-gl-' + new Date().toISOString().slice(0,10) + '.png';
+  a.click();
+  showToast('画像を保存しました ✓');
+};
+
+window.talentShareToX = function() {
+  const text = encodeURIComponent('タイGLを観てます #タイGL #CoryGLGuide ' + location.origin + location.pathname);
+  window.open('https://x.com/intent/tweet?text=' + text, '_blank');
+};
+
+// Canvas共通ユーティリティ
+function _tsigLoadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+function _tsigRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+function _tsigDrawImageCover(ctx, img, x, y, w, h) {
+  const ia = img.width/img.height, ba = w/h;
+  let sx,sy,sw,sh;
+  if (ia > ba) { sh=img.height; sw=sh*ba; sx=(img.width-sw)/2; sy=0; }
+  else { sw=img.width; sh=sw/ba; sx=0; sy=0; }
+  ctx.drawImage(img,sx,sy,sw,sh,x,y,w,h);
+}
+function _tsigWrapText(ctx, text, x, y, maxW, lineH, doFill=true, maxLines=99) {
+  if (!text) return 0;
+  let line='', lineCount=0, cy=y;
+  for (let i=0; i<text.length; i++) {
+    const test = line + text[i];
+    if (ctx.measureText(test).width > maxW && line) {
+      if (lineCount >= maxLines-1) { if (doFill) ctx.fillText(line+'…',x,cy); return lineCount+1; }
+      if (doFill) ctx.fillText(line,x,cy);
+      line=text[i]; cy+=lineH; lineCount++;
+    } else { line=test; }
+  }
+  if (line && lineCount < maxLines) { if (doFill) ctx.fillText(line,x,cy); lineCount++; }
+  return lineCount;
+}
+function _tsigDrawLogo(ctx, W, H) {
+  ctx.fillStyle='rgba(155,126,200,.4)';
+  ctx.font="14px 'Meiryo','Noto Sans JP',sans-serif";
+  ctx.textAlign='right';
+  ctx.fillText("🌸 Cory's GL Guide", W-24, H-20);
+}
+
+async function _drawTsigCardImage(canvas, d) {
+  const W=1200, H=630;
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  const ud=(window._talentShareUserDoc?.dramas||{})[String(d._id||d.title)]||{};
+  const bg=ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#1a0a28'); bg.addColorStop(.5,'#2a1040'); bg.addColorStop(1,'#0e0518');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const PW=280,PH=420,PX=80,PY=(H-PH)/2;
+  ctx.save();
+  if (d.image_url) {
+    try {
+      const img = await _tsigLoadImage(d.image_url);
+      _tsigRoundRect(ctx,PX,PY,PW,PH,16); ctx.clip();
+      _tsigDrawImageCover(ctx,img,PX,PY,PW,PH);
+    } catch(e) { ctx.restore(); ctx.save(); _tsigRoundRect(ctx,PX,PY,PW,PH,16); ctx.clip(); const pg=ctx.createLinearGradient(PX,PY,PX+PW,PY+PH); pg.addColorStop(0,'#9b7ec8'); pg.addColorStop(1,'#e8547a'); ctx.fillStyle=pg; ctx.fillRect(PX,PY,PW,PH); }
+  } else {
+    _tsigRoundRect(ctx,PX,PY,PW,PH,16); ctx.clip(); const pg=ctx.createLinearGradient(PX,PY,PX+PW,PY+PH); pg.addColorStop(0,'#9b7ec8'); pg.addColorStop(1,'#e8547a'); ctx.fillStyle=pg; ctx.fillRect(PX,PY,PW,PH);
+  }
+  ctx.restore();
+  const TX=PX+PW+60, TY=100, TW=W-TX-60;
+  ctx.textAlign='left';
+  ctx.fillStyle='#f0e8f8';
+  ctx.font="bold 44px 'Meiryo','DM Serif Display',Georgia,sans-serif";
+  const tl=_tsigWrapText(ctx,d.title,TX,TY,TW,52,true);
+  let ty=TY+tl*52;
+  if (d.title_kana) { ctx.fillStyle='rgba(180,160,210,.7)'; ctx.font="16px 'Meiryo','Noto Sans JP',sans-serif"; ctx.fillText(d.title_kana,TX,ty+10); ty+=36; }
+  const cp=d.cps&&d.cps.length ? d.cps.filter(c=>c.top||c.bottom).map(c=>c.ship_name||[c.top,c.bottom].filter(Boolean).join(' / ')).join(' & ') : '';
+  if (cp) { ty+=16; ctx.fillStyle='#c4a8e8'; ctx.font="20px 'Meiryo','Noto Sans JP',sans-serif"; ctx.fillText('👩‍❤️‍👩 '+cp,TX,ty); ty+=36; }
+  if (ud.rate) {
+    ty+=20;
+    const stars='★'.repeat(Math.min(5,ud.rate))+'☆'.repeat(Math.max(0,5-ud.rate));
+    ctx.fillStyle='rgba(212,168,67,.15)'; _tsigRoundRect(ctx,TX,ty,200,38,19); ctx.fill();
+    ctx.fillStyle='#d4a843'; ctx.font='bold 22px sans-serif'; ctx.textAlign='left';
+    ctx.fillText('⭐ 自分の評価: '+ud.rate,TX+12,ty+26); ty+=50;
+  }
+  if (ud.status) {
+    ty+=10;
+    const colors={'視聴済み':['rgba(155,126,200,.2)','#c4a8e8'],'視聴中':['rgba(232,84,122,.15)','#f0839e'],'Drop out':['rgba(155,126,200,.1)','#9b7ec8']};
+    const [bg2,fg]=colors[ud.status]||['rgba(155,126,200,.1)','#9b7ec8'];
+    ctx.font='bold 20px sans-serif';
+    const tw=ctx.measureText(ud.status).width+32;
+    ctx.fillStyle=bg2; _tsigRoundRect(ctx,TX,ty,tw,36,18); ctx.fill();
+    ctx.fillStyle=fg; ctx.textAlign='left'; ctx.fillText(ud.status,TX+16,ty+25); ty+=44;
+  }
+  _tsigDrawLogo(ctx,W,H);
+}
+
+async function _drawTsigGridImage(canvas, list) {
+  const W=1080, H=1080;
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  const ud=window._talentShareUserDoc?.dramas||{};
+  const bg=ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#1a0a28'); bg.addColorStop(1,'#0e0518');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const _status=document.getElementById('tsig-status')?.value||'';
+  const statusEN={'視聴済み':'Watched','視聴中':'Watching','Drop out':'Dropped'};
+  const mainTitle=(_status?(statusEN[_status]||_status)+' List  🐶':'My Watch List  🐶');
+  ctx.textAlign='center'; ctx.fillStyle='#f0e8f8';
+  ctx.font="bold 38px 'Meiryo','Noto Sans JP',sans-serif";
+  ctx.fillText(mainTitle,W/2,54);
+  const cols=list.length<=4?2:list.length<=6?3:list.length<=9?3:4;
+  const rows=Math.ceil(list.length/cols);
+  const PAD=40, GAP=16;
+  const cellW=(W-PAD*2-GAP*(cols-1))/cols;
+  const cellH=(H-100-PAD-GAP*(rows-1))/rows;
+  for (let i=0;i<list.length;i++) {
+    const d=list[i];
+    const col=i%cols, row=Math.floor(i/cols);
+    const x=PAD+col*(cellW+GAP), y=90+row*(cellH+GAP);
+    const udata=ud[String(d._id||d.title)]||{};
+    ctx.save(); _tsigRoundRect(ctx,x,y,cellW,cellH,12); ctx.clip();
+    ctx.fillStyle='rgba(155,126,200,.08)'; ctx.fillRect(x,y,cellW,cellH);
+    if (d.image_url) {
+      try {
+        const img=await _tsigLoadImage(d.image_url);
+        const ph=cellH*.62;
+        _tsigDrawImageCover(ctx,img,x,y,cellW,ph);
+        const ov=ctx.createLinearGradient(x,y+ph*.5,x,y+ph);
+        ov.addColorStop(0,'transparent'); ov.addColorStop(1,'#1a0a28cc');
+        ctx.fillStyle=ov; ctx.fillRect(x,y,cellW,ph);
+      } catch(e) { const pg=ctx.createLinearGradient(x,y,x+cellW,y+cellH); pg.addColorStop(0,'#9b7ec8'); pg.addColorStop(1,'#e8547a'); ctx.fillStyle=pg; ctx.fillRect(x,y,cellW,cellH*.62); }
+    }
+    ctx.restore(); ctx.save(); _tsigRoundRect(ctx,x,y,cellW,cellH,12); ctx.clip();
+    const FONT="'Meiryo','Noto Sans JP',sans-serif";
+    const fTitle=Math.max(13,Math.min(17,cellW/14));
+    const fRate=Math.max(12,Math.min(15,cellW/16));
+    let ty2=y+cellH*.62+fTitle;
+    ctx.fillStyle='#f0e8f8'; ctx.font=`bold ${fTitle}px ${FONT}`; ctx.textAlign='left';
+    const tLines=_tsigWrapText(ctx,d.title,x+10,ty2,cellW-20,fTitle+5,true,2);
+    let infoY=ty2+tLines*(fTitle+5)+4;
+    if (udata.rate) {
+      const stars='★'.repeat(Math.min(5,udata.rate))+'☆'.repeat(Math.max(0,5-udata.rate));
+      ctx.fillStyle='#d4a843'; ctx.font=`${fRate}px ${FONT}`;
+      ctx.fillText(stars+'  '+udata.rate,x+10,infoY+fRate); infoY+=fRate+6;
+    }
+    ctx.restore();
+  }
+  _tsigDrawLogo(ctx,W,H);
+}
+
 // Ko-fi カスタムボタン描画
 (function() {
   function initKofi() {
@@ -585,6 +943,7 @@ body{background:var(--dark);color:var(--text);font-family:'Noto Sans JP',sans-se
 .sb-badge{margin-left:auto;font-size:9px;padding:2px 6px;border-radius:20px;font-weight:600;white-space:nowrap;flex-shrink:0;}
 .b-purple{background:rgba(155,126,200,.2);color:var(--ll);}
 .b-gold{background:rgba(212,168,67,.15);color:var(--gold);}
+.b-pink{background:rgba(232,84,122,.15);color:var(--rl);}
 .sb-divider{border:none;border-top:1px solid rgba(155,126,200,.1);margin:5px 0;}
 .sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:199;}
 .sb-mobile-toggle{display:none;position:fixed;top:14px;left:14px;z-index:300;
@@ -666,7 +1025,12 @@ select option{background:var(--dark2);}
 .tcard-edit-btn{position:absolute;top:7px;right:7px;background:rgba(26,18,32,.88);
   border:1px solid rgba(212,168,67,.35);border-radius:6px;padding:3px 7px;
   color:var(--gold);cursor:pointer;font-size:11px;opacity:0;transition:opacity .2s;}
-.tcard:hover .tcard-edit-btn{opacity:1;}
+.tcard-share-btn{position:absolute;top:7px;left:7px;background:rgba(26,18,32,.88);
+  border:1px solid rgba(155,126,200,.35);border-radius:6px;padding:4px 6px;
+  color:var(--ll);cursor:pointer;opacity:0;transition:opacity .2s;
+  display:flex;align-items:center;justify-content:center;line-height:1;}
+.tcard:hover .tcard-edit-btn,.tcard:hover .tcard-share-btn{opacity:1;}
+@media(max-width:768px){.tcard-edit-btn,.tcard-share-btn{opacity:1;}}
 .tcard-body{padding:10px 12px 12px;}
 .tcard-nickname{font-family:'DM Serif Display',serif;font-size:15px;color:var(--text);margin-bottom:1px;line-height:1.3;}
 .tcard-realname{font-size:10px;color:var(--muted);margin-bottom:3px;}
@@ -761,6 +1125,11 @@ select option{background:var(--dark2);}
   border-radius:8px;padding:7px 10px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;}
 .form-group input:focus,.form-group textarea:focus{border-color:var(--gold);}
 .form-group textarea{resize:vertical;min-height:72px;}
+.form-group select{background:rgba(155,126,200,.06);border:1px solid rgba(155,126,200,.2);
+  border-radius:8px;padding:7px 10px;color:var(--text);font-family:'Noto Sans JP',sans-serif;font-size:13px;outline:none;}
+.plat-add-btn{background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.25);border-radius:8px;
+  padding:7px 14px;color:var(--ll);cursor:pointer;font-size:13px;font-family:'Noto Sans JP',sans-serif;transition:all .2s;}
+.plat-add-btn:hover{background:rgba(155,126,200,.2);}
 .age-preview{font-size:12px;color:var(--ll);margin-top:4px;min-height:18px;}
 .form-hint{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.5;}
 .am-footer{padding:10px 18px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid rgba(212,168,67,.1);}
@@ -920,13 +1289,13 @@ select option{background:var(--dark2);}
 
       <hr class="sb-divider">
 
-      <!-- マイリストを共有する（index.htmlに飛ぶ） -->
-      <div class="sb-section-label">マイリストを共有する</div>
-      <a class="sb-item" href="index.html#shareimg">
+      <!-- マイリストを共有する（ログイン時のみ） -->
+      <div class="sb-section-label" id="sb-shareimg-section" style="display:none">マイリストを共有する</div>
+      <button class="sb-item" id="sb-shareimg" style="display:none" onclick="openTalentShareImgModal()">
         <span class="sb-icon si-rose">📸</span><span>マイリストを共有する</span>
-      </a>
-
-      <hr class="sb-divider">
+        <span class="sb-badge b-pink">NEW</span>
+      </button>
+      <hr class="sb-divider" id="sb-shareimg-divider" style="display:none">
 
       <!-- 次何見る？ -->
       <div class="sb-section-label">次何見る？</div>
@@ -1130,6 +1499,99 @@ select option{background:var(--dark2);}
     <div class="am-footer">
       <button class="am-cancel" onclick="closeForm()">キャンセル</button>
       <button class="am-save" onclick="submitForm()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- マイリスト画像作成モーダル（talents.html用） -->
+<div class="admin-overlay" id="talentShareImgModal">
+  <div class="admin-modal" style="max-width:680px">
+    <div class="am-head">
+      <h2>📸 画像を作る</h2>
+      <button class="am-close" onclick="closeTalentShareImgModal()">✕</button>
+    </div>
+    <div class="am-body" style="display:flex;flex-direction:column;gap:16px">
+      <div class="am-section">
+        <div class="am-section-title">🎛 対象作品フィルター</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <div class="form-group" style="min-width:150px">
+            <label>視聴Status</label>
+            <select id="tsig-status">
+              <option value="">すべて</option>
+              <option value="視聴済み">視聴済み</option>
+              <option value="視聴中">視聴中</option>
+              <option value="Drop out">Drop out</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:120px">
+            <label>放送年</label>
+            <select id="tsig-year"><option value="">すべて</option></select>
+          </div>
+          <div class="form-group" style="min-width:150px">
+            <label>制作会社</label>
+            <select id="tsig-studio"><option value="">すべて</option></select>
+          </div>
+          <div class="form-group" style="min-width:130px">
+            <label>並び順</label>
+            <select id="tsig-sort">
+              <option value="myrate">自分の評価順</option>
+              <option value="new">放送年（新しい順）</option>
+              <option value="old">放送年（古い順）</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:120px">
+            <label>最低自分評価</label>
+            <select id="tsig-minrate">
+              <option value="0">指定なし</option>
+              <option value="3">3以上</option>
+              <option value="4">4以上</option>
+              <option value="5">5のみ</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="am-section">
+        <div class="am-section-title">🖼 形式・件数</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <div class="form-group" style="min-width:140px">
+            <label>形式</label>
+            <select id="tsig-mode" onchange="_updateTsigCount()">
+              <option value="card">カード（1作品）</option>
+              <option value="grid">一覧（複数作品）</option>
+            </select>
+          </div>
+          <div class="form-group tsig-count-wrap" style="min-width:120px">
+            <label>表示件数</label>
+            <select id="tsig-count">
+              <option value="4">4件</option>
+              <option value="6">6件</option>
+              <option value="9">9件</option>
+              <option value="12">12件</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="am-section">
+        <div class="am-section-title">👁 プレビュー</div>
+        <div style="text-align:center;margin-bottom:8px">
+          <button class="plat-add-btn" onclick="generateTalentShareImg()" style="background:rgba(232,84,122,.15);border-color:rgba(232,84,122,.3);color:var(--rl)">
+            ✨ プレビューを生成
+          </button>
+        </div>
+        <div id="tsig-preview" style="display:none;text-align:center">
+          <canvas id="tsig-canvas" style="max-width:100%;border-radius:8px;border:1px solid rgba(155,126,200,.2)"></canvas>
+          <div id="tsig-count-info" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+        </div>
+        <div id="tsig-empty" style="display:none;font-size:12px;color:var(--muted);text-align:center;padding:20px 0">
+          条件に合う作品が見つかりません
+        </div>
+      </div>
+    </div>
+    <div class="am-footer">
+      <button class="am-cancel" onclick="closeTalentShareImgModal()">閉じる</button>
+      <button class="am-cancel" id="tsig-clear-btn" style="display:none;border-color:rgba(232,84,122,.3);color:var(--rl)" onclick="clearTalentShareImg()">🗑 クリア</button>
+      <button class="am-save" id="tsig-save-btn" style="display:none" onclick="saveTalentShareImg()">💾 画像を保存</button>
+      <button class="am-save" id="tsig-x-btn" style="display:none;background:rgba(0,0,0,.3);border-color:rgba(255,255,255,.2);color:#fff" onclick="talentShareToX()">𝕏 Xで共有</button>
     </div>
   </div>
 </div>

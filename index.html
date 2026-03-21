@@ -1206,7 +1206,12 @@ function go() {
     l = l.filter(d => FILTER_STUDIO.some(v => v === (d.studio||'')));
   }
   if (FILTER_YEAR.length > 0) {
-    l = l.filter(d => FILTER_YEAR.some(v => v === (d.year||'未定')));
+    l = l.filter(d => {
+      const y = d.year ? String(d.year) : '未定';
+      const isUndef = !d.release_start || d.release_start === '未定' || d.release_start === '？' || d.release_start === '?';
+      const effectiveYear = (y === '9999' || y === '' || !d.year) ? '未定' : y;
+      return FILTER_YEAR.some(v => v === effectiveYear || (v === '未定' && isUndef));
+    });
   }
 
   if (Q) {
@@ -1247,8 +1252,16 @@ function buildYearTabs() {
 function buildFilterDropdowns() {
   // 制作会社リスト（重複なし・空除外）
   const studios = [...new Set(localDramas.map(d=>d.studio||'').filter(Boolean))].sort();
-  // 放送年リスト
-  const years = [...new Set(localDramas.map(d=>d.year||'未定'))].sort((a,b)=>b.localeCompare(a));
+  // 放送年リスト（'9999'や空を'未定'に統一）
+  const years = [...new Set(localDramas.map(d => {
+    if (!d.year || d.year === '9999' || d.year === '') return '未定';
+    if (!d.release_start || d.release_start === '未定' || d.release_start === '？') return '未定';
+    return String(d.year);
+  }))].sort((a,b) => {
+    if (a === '未定') return 1;
+    if (b === '未定') return -1;
+    return b.localeCompare(a);
+  });
 
   const makeItems = (type, items) => items.map(v => `
     <label class="dd-item">

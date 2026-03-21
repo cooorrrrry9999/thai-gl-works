@@ -72,26 +72,28 @@ function _tLoadCache(key) {
     const raw = sessionStorage.getItem(key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
+    if (!Array.isArray(data) || data.length === 0) { sessionStorage.removeItem(key); return null; }
     if (Date.now() - ts > _T_CACHE_TTL) { sessionStorage.removeItem(key); return null; }
     return data;
-  } catch(e) { return null; }
+  } catch(e) {
+    try { sessionStorage.removeItem(key); } catch(e2) {}
+    return null;
+  }
 }
 
 // ── Data ───────────────────────────────────────────────────────────────
 async function loadAll() {
   showLoading(true);
   try {
-    // 管理者はキャッシュをスキップ（常に最新データを使う）
-    const cachedTalents = !isAdmin ? _tLoadCache(_T_CACHE_TALENTS) : null;
-    const cachedDramas  = !isAdmin ? _tLoadCache(_T_CACHE_DRAMAS)  : null;
+    // キャッシュを試みる（管理者・キャッシュなし時はFirestoreから取得）
+    const cachedTalents = _tLoadCache(_T_CACHE_TALENTS);
+    const cachedDramas  = _tLoadCache(_T_CACHE_DRAMAS);
 
     if (cachedTalents && cachedDramas) {
-      // 両方キャッシュヒット → Firestore読み取りゼロ
       talents = cachedTalents;
       dramas  = cachedDramas;
       window._talentsDramas = dramas;
     } else {
-      // どちらかがキャッシュミス → 必要な方だけ取得
       const fetchTalents = cachedTalents ? Promise.resolve(null) : getDocs(collection(db, 'talents'));
       const fetchDramas  = cachedDramas  ? Promise.resolve(null) : getDocs(collection(db, 'dramas'));
       const [ts, ds] = await Promise.all([fetchTalents, fetchDramas]);
@@ -114,14 +116,16 @@ async function loadAll() {
         window._talentsDramas = dramas;
       }
     }
-  } catch(e) { talents = []; dramas = []; }
+  } catch(e) {
+    // Firestore取得失敗時はキャッシュをクリアしてエラーを握りつぶす
+    try { sessionStorage.removeItem(_T_CACHE_TALENTS); sessionStorage.removeItem(_T_CACHE_DRAMAS); } catch(e2) {}
+    talents = []; dramas = [];
+  }
   showLoading(false);
-  // 認証状態が確定していればadmin-only要素も更新
   document.querySelectorAll('.admin-only').forEach(el => {
     el.style.display = isAdmin ? '' : 'none';
   });
   render();
-  // index.htmlからのタレントリンク経由で直接開く
   const openId = sessionStorage.getItem('openTalent');
   if (openId) {
     sessionStorage.removeItem('openTalent');

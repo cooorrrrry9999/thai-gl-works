@@ -1105,7 +1105,8 @@ window.resetAllFilters = function() {
     document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
   });
   // 視聴環境ボタンをリセット
-  updateEnvBtnLabel();
+  const _envBtn = document.getElementById('fbtn-env');
+  if (_envBtn) { _envBtn.textContent = '🎧 視聴環境 ▾'; _envBtn.classList.remove('has-filter'); }
   window.buildFilterDropdowns?.();
   renderFilterTags();
   render();

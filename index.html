@@ -1102,13 +1102,14 @@ window.resetAllFilters = function() {
   FILTER_PLT=[]; FILTER_STATUS=[]; FILTER_STUDIO=[]; FILTER_YEAR=[]; FILTER_VPN=[]; FILTER_SUBTITLE=[]; FILTER_USER_STATUS=[]; FILTER_CORY_STATUS=[];
   ['plt','status','studio','year','vpn','subtitle','ustatus','cstatus'].forEach(t => {
     updateFilterBtnLabel(t);
-    document.querySelectorAll('#dd-' + t + ' input[type=checkbox]').forEach(el => el.checked = false);
   });
   // 視聴環境ボタンをリセット
   const _envBtn = document.getElementById('fbtn-env');
   if (_envBtn) { _envBtn.textContent = '🎧 視聴環境 ▾'; _envBtn.classList.remove('has-filter'); }
-  window.buildFilterDropdowns?.();
+  // env-chipのactiveも解除
+  document.querySelectorAll('.env-chip.active').forEach(el => el.classList.remove('active'));
   renderFilterTags();
+  buildFilterDropdowns(); // FILTERが空の状態でドロップダウンを再描画
   render();
 };
 
@@ -3433,14 +3434,13 @@ window.sbNav = function(key) {
       window._CARD_MODE_SET?.('mylist');
       window._F_SET?.('a');
       window._S_SET?.('myrate');
-      // フィルターを完全リセット（resetAllFilters経由で変数・チェックボックス・ラベルを一括処理）
-      window.resetAllFilters?.();
       O = 'desc';
       const srtEl = document.getElementById('srt');
       if (srtEl) srtEl.value = 'myrate';
       const oBtn = document.getElementById('srt-order');
       if (oBtn) { oBtn.textContent='↓'; oBtn.style.color='var(--muted)'; oBtn.style.borderColor='rgba(155,126,200,.25)'; }
-      window.render?.();
+      // フィルターリセット（内部でrender()まで呼ぶ）
+      window.resetAllFilters?.();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');
       const btn = document.getElementById('loginBtn');

@@ -1207,19 +1207,8 @@ function go() {
   let l = [...localDramas];
   // マイリストフィルター
   // マイリストモード：userDoc.dramasにキーが存在する作品（status/rate/memoのいずれかが設定済み）
-  if (CARD_MODE === 'mylist') {
-    const dramaKeys = Object.keys(userDoc.dramas || {});
-    l = l.filter(d => {
-      const idStr  = String(d._id  ?? '');
-      const titStr = String(d.title ?? '');
-      const key = dramaKeys.find(k => k === idStr || k === titStr);
-      if (!key) return false;
-      const u = userDoc.dramas[key];
-      // status・rate・memoのどれかが設定されていれば表示
-      // （未視聴でもstatusフィールドがなければ登録なしとして除外）
-      return u && (u.status !== undefined || u.rate !== undefined || u.memo !== undefined);
-    });
-  }
+  // マイリストモード：全作品を表示（ユーザーの視聴情報はカードに重ねて表示するだけ）
+  // ※ フィルターで絞りたい場合は視聴Statusフィルターを使う
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 
   // フィルター条件：

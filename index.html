@@ -1149,7 +1149,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function go() {
   let l = [...localDramas];
   // マイリストフィルター
-  if (F==='w')   l = l.filter(d => !!userDoc.dramas?.[String(d._id||d.title)]?.status);  // マイリスト：ステータスが何か登録されている作品
+  // マイリストモード：ステータスが登録されている作品のみ（F==='w'は廃止、CARD_MODEで制御）
+  if (CARD_MODE === 'mylist') l = l.filter(d => !!userDoc.dramas?.[String(d._id||d.title)]?.status);
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 
   // フィルター条件：
@@ -3425,7 +3426,7 @@ window.sbNav = function(key) {
     const user = window._currentUser;
     if (user) {
       window._CARD_MODE_SET?.('mylist');
-      window._F_SET?.('w');
+      window._F_SET?.('a'); // F==='w'廃止：CARD_MODE='mylist'で絞り込む
       window._S_SET?.('myrate');
       window._FILTER_RESET?.(); // 前画面のフィルターをリセット
       O = 'desc';

@@ -58,6 +58,8 @@ onAuthStateChanged(auth, user => {
 window._talentsDb = db;
 window._firestoreGetDoc = getDoc;
 window._firestoreDoc = doc;
+// talents配列も公開（loadAll後に更新される）
+window._talentsList = [];
 
 // ── キャッシュ定数（index.htmlと共通キーを使用） ─────────────────────
 const _T_CACHE_DRAMAS  = 'glguide_dramas_v1';
@@ -105,8 +107,7 @@ async function loadAll() {
         _tSaveCache(_T_CACHE_TALENTS, talents);
       } else {
         talents = cachedTalents;
-      }
-      if (ds) {
+      }      if (ds) {
         dramas = [];
         ds.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
         window._talentsDramas = dramas;
@@ -122,6 +123,7 @@ async function loadAll() {
     talents = []; dramas = [];
   }
   showLoading(false);
+  window._talentsList = talents; // 通常scriptから参照できるよう公開
   document.querySelectorAll('.admin-only').forEach(el => {
     el.style.display = isAdmin ? '' : 'none';
   });
@@ -582,14 +584,16 @@ window.shareTalentFromModal = function(e) {
   e && e.stopPropagation();
   const sw = document.getElementById('detailShareWrap');
   const id = sw?.dataset?.talentId;
-  const t = id ? talents.find(x => x._id === id) : null;
+  const list = window._talentsList || [];
+  const t = id ? list.find(x => x._id === id) : null;
   if (!t) return;
   _showTalentShareMenu(e.currentTarget || e.target, t);
 };
 
 window.shareTalentCard = function(id, e) {
   e && e.stopPropagation();
-  const t = talents.find(x => x._id === id);
+  const list = window._talentsList || [];
+  const t = list.find(x => x._id === id);
   if (!t) return;
   _showTalentShareMenu(e.currentTarget || e.target, t);
 };
@@ -1419,7 +1423,6 @@ select option{background:var(--dark2);}
       <div class="sb-section-label" id="sb-shareimg-section" style="display:none">マイリストを共有する</div>
       <button class="sb-item" id="sb-shareimg" style="display:none" onclick="openTalentShareImgModal()">
         <span class="sb-icon si-rose">📸</span><span>マイリストを共有する</span>
-        <span class="sb-badge b-pink">NEW</span>
       </button>
       <hr class="sb-divider" id="sb-shareimg-divider" style="display:none">
 

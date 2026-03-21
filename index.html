@@ -1155,7 +1155,10 @@ function go() {
   if (CARD_MODE === 'mylist') l = l.filter(d => {
     const key = String(d._id||d.title);
     const u = userDoc.dramas?.[key];
-    return u && (u.status || u.rate || u.memo);
+    // キーが存在し、status（空文字含む）・rate・memoのいずれかが設定されているか
+    // rate===0 も「設定済み」として扱うため hasOwnProperty で確認
+    if (!u) return false;
+    return Object.keys(u).length > 0; // 何かフィールドがあれば表示
   });
   if (F==='fav') l = l.filter(d => userDoc.dramas?.[String(d._id||d.title)]?.status === '視聴中');
 

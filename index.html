@@ -42,6 +42,17 @@ const WATCH_STATUS   = ['未視聴','視聴中','視聴済み','Drop out'];
 
 // ── 設定データをFirestoreから読み込む ─────────────────────────────────
 async function loadSettings() {
+  // キャッシュがあれば使う
+  const cached = _loadCacheObj(CACHE_KEY_SETTINGS);
+  if (cached) {
+    if (cached.platforms) PLATFORM_OPTIONS = cached.platforms;
+    if (cached.vpn)       VPN_OPTIONS      = cached.vpn;
+    if (cached.subtitles) SUBTITLE_OPTIONS = cached.subtitles;
+    if (cached.cut)       CUT_OPTIONS      = cached.cut;
+    if (cached.paid)      PAID_OPTIONS     = cached.paid;
+    if (cached.relation)  RELATION_OPTIONS = cached.relation;
+    return;
+  }
   try {
     const snap = await getDoc(doc(db, 'settings', 'options'));
     if (snap.exists()) {
@@ -52,6 +63,7 @@ async function loadSettings() {
       if (d.cut)       CUT_OPTIONS      = d.cut;
       if (d.paid)      PAID_OPTIONS     = d.paid;
       if (d.relation)  RELATION_OPTIONS = d.relation;
+      _saveCacheObj(CACHE_KEY_SETTINGS, d);
     }
   } catch(e) { /* デフォルト値を使用 */ }
 }
@@ -197,37 +209,71 @@ onAuthStateChanged(auth, async user => {
 });
 
 async function loadUserDoc(uid) {
+  // ユーザーデータもキャッシュ（短め30分）
+  const USER_KEY = 'glguide_user_' + uid;
+  const USER_TTL = 30 * 60 * 1000;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    if (raw) {
+      const { ts, data } = JSON.parse(raw);
+      if (Date.now() - ts < USER_TTL && data && data.dramas) {
+        userDoc = data;
+        window._userDoc = userDoc;
+        return;
+      }
+    }
+  } catch(e) {}
+  // キャッシュなし → Firestoreから取得
   const ref = doc(db, 'users', uid);
   const snap = await getDoc(ref);
   userDoc = snap.exists() ? snap.data() : { dramas: {} };
   if (!userDoc.dramas) userDoc.dramas = {};
   window._userDoc = userDoc;
+  try { localStorage.setItem('glguide_user_' + uid, JSON.stringify({ ts: Date.now(), data: userDoc })); } catch(e) {}
 }
 async function saveUserDoc() {
   if (!currentUser) return;
   window._userDoc = userDoc;
   await setDoc(doc(db, 'users', currentUser.uid), userDoc, { merge: true });
+  // 書き込み後はキャッシュも更新
+  try { localStorage.setItem('glguide_user_' + currentUser.uid, JSON.stringify({ ts: Date.now(), data: userDoc })); } catch(e) {}
 }
 
 // ── DRAMA DATA ─────────────────────────────────────────────────────────
 // ── キャッシュ定数 ────────────────────────────────────────────────────
-const CACHE_KEY_DRAMAS  = 'glguide_dramas_v1';
-const CACHE_KEY_TALENTS = 'glguide_talents_v1';
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ
+const CACHE_KEY_DRAMAS   = 'glguide_dramas_v2';
+const CACHE_KEY_TALENTS  = 'glguide_talents_v2';
+const CACHE_KEY_SETTINGS = 'glguide_settings_v2';
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6時間キャッシュ（localStorageで永続）
 
 function _saveCache(key, data) {
-  try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
 }
 function _loadCache(key) {
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
-    if (!Array.isArray(data) || data.length === 0) { sessionStorage.removeItem(key); return null; }
-    if (Date.now() - ts > CACHE_TTL_MS) { sessionStorage.removeItem(key); return null; }
+    if (!Array.isArray(data) || data.length === 0) { localStorage.removeItem(key); return null; }
+    if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
     return data;
   } catch(e) {
-    try { sessionStorage.removeItem(key); } catch(e2) {}
+    try { localStorage.removeItem(key); } catch(e2) {}
+    return null;
+  }
+}
+function _saveCacheObj(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+}
+function _loadCacheObj(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
+    return data;
+  } catch(e) {
+    try { localStorage.removeItem(key); } catch(e2) {}
     return null;
   }
 }
@@ -920,7 +966,7 @@ window.submitAdminForm = async () => {
       showToast('追加しました ✓');
     }
     // 管理者更新時はキャッシュをクリア（一般ユーザーが古いデータを見ないように）
-    try { sessionStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
+    try { localStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
     closeAdminModal();
     await loadDramasFromDB();
   } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
@@ -934,7 +980,7 @@ window.deleteDrama = async (id, e) => {
   try {
     await deleteDoc(doc(db,'dramas',id));
     showToast('削除しました');
-    try { sessionStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
+    try { localStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
     closeMD();
     await loadDramasFromDB();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }

@@ -62,23 +62,23 @@ window._firestoreDoc = doc;
 window._talentsList = [];
 
 // ── キャッシュ定数（index.htmlと共通キーを使用） ─────────────────────
-const _T_CACHE_DRAMAS  = 'glguide_dramas_v1';
-const _T_CACHE_TALENTS = 'glguide_talents_v1';
-const _T_CACHE_TTL = 10 * 60 * 1000; // 10分
+const _T_CACHE_DRAMAS  = 'glguide_dramas_v2';
+const _T_CACHE_TALENTS = 'glguide_talents_v2';
+const _T_CACHE_TTL = 6 * 60 * 60 * 1000; // 6時間（localStorage で永続）
 
 function _tSaveCache(key, data) {
-  try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
 }
 function _tLoadCache(key) {
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
-    if (!Array.isArray(data) || data.length === 0) { sessionStorage.removeItem(key); return null; }
-    if (Date.now() - ts > _T_CACHE_TTL) { sessionStorage.removeItem(key); return null; }
+    if (!Array.isArray(data) || data.length === 0) { localStorage.removeItem(key); return null; }
+    if (Date.now() - ts > _T_CACHE_TTL) { localStorage.removeItem(key); return null; }
     return data;
   } catch(e) {
-    try { sessionStorage.removeItem(key); } catch(e2) {}
+    try { localStorage.removeItem(key); } catch(e2) {}
     return null;
   }
 }
@@ -119,7 +119,7 @@ async function loadAll() {
     }
   } catch(e) {
     // Firestore取得失敗時はキャッシュをクリアしてエラーを握りつぶす
-    try { sessionStorage.removeItem(_T_CACHE_TALENTS); sessionStorage.removeItem(_T_CACHE_DRAMAS); } catch(e2) {}
+    try { localStorage.removeItem(_T_CACHE_TALENTS); localStorage.removeItem(_T_CACHE_DRAMAS); } catch(e2) {}
     talents = []; dramas = [];
   }
   showLoading(false);
@@ -450,7 +450,7 @@ window.submitForm = async () => {
     const docId = editingId || `${nickname}_${Date.now()}`;
     await setDoc(doc(db, 'talents', docId), data, { merge: true });
     showToast(editingId ? '更新しました ✓' : '追加しました ✓');
-    try { sessionStorage.removeItem(_T_CACHE_TALENTS); } catch(e) {}
+    try { localStorage.removeItem(_T_CACHE_TALENTS); } catch(e) {}
     closeForm();
     await loadAll();
   } catch(e) {
@@ -465,7 +465,7 @@ window.deleteTalent = async id => {
   try {
     await deleteDoc(doc(db, 'talents', id));
     showToast('削除しました');
-    try { sessionStorage.removeItem(_T_CACHE_TALENTS); } catch(e) {}
+    try { localStorage.removeItem(_T_CACHE_TALENTS); } catch(e) {}
     closeDetail();
     await loadAll();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }

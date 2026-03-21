@@ -599,13 +599,7 @@ window.shareTalentCard = function(id, e) {
 };
 
 function _showTalentShareMenu(btn, t) {
-  // スマホはネイティブシェアAPI
   const pageUrl = location.origin + location.pathname;
-  if (navigator.share) {
-    navigator.share({ title: t.nickname || '', text: t.nickname + ' | Cory\'s GL Guide', url: pageUrl })
-      .catch(() => {});
-    return;
-  }
 
   const existing = document.getElementById('talent-share-popup');
   if (existing) { existing.remove(); return; }

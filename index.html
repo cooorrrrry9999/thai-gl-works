@@ -238,7 +238,11 @@ async function loadDramasFromDB() {
 // ?drama=ID のとき：1件だけ先行取得してモーダルを即座に開く（スマホ高速化）
 async function preloadDramaModal(dramaId) {
   try {
-    const snap = await getDoc(doc(db, 'dramas', dramaId));
+    // ドラマデータとタレントデータを並行取得
+    const [snap] = await Promise.all([
+      getDoc(doc(db, 'dramas', dramaId)),
+      localTalents.length === 0 ? loadTalentsFromDB() : Promise.resolve()
+    ]);
     if (!snap.exists()) return;
     const d = { _id: snap.id, ...snap.data() };
     // localDramasにまだなければ先行追加

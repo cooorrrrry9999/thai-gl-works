@@ -45,6 +45,7 @@ window.logout = async () => { await signOut(auth); showToast('ログアウトし
 
 onAuthStateChanged(auth, user => {
   currentUser = user;
+  window._talentsCurrentUser = user;  // 通常scriptからアクセス用
   isAdmin = user ? ADMIN_EMAILS.includes(user.email) : false;
   updateAuthUI();
   document.querySelectorAll('.admin-only').forEach(el => {
@@ -53,20 +54,66 @@ onAuthStateChanged(auth, user => {
   render();
 });
 
+// 通常scriptから使えるようwindowに公開
+window._talentsDb = db;
+window._firestoreGetDoc = getDoc;
+window._firestoreDoc = doc;
+
+// ── キャッシュ定数（index.htmlと共通キーを使用） ─────────────────────
+const _T_CACHE_DRAMAS  = 'glguide_dramas_v1';
+const _T_CACHE_TALENTS = 'glguide_talents_v1';
+const _T_CACHE_TTL = 10 * 60 * 1000; // 10分
+
+function _tSaveCache(key, data) {
+  try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+}
+function _tLoadCache(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > _T_CACHE_TTL) { sessionStorage.removeItem(key); return null; }
+    return data;
+  } catch(e) { return null; }
+}
+
 // ── Data ───────────────────────────────────────────────────────────────
 async function loadAll() {
   showLoading(true);
   try {
-    const [ts, ds] = await Promise.all([
-      getDocs(collection(db, 'talents')),
-      getDocs(collection(db, 'dramas')),
-    ]);
-    talents = [];
-    ts.forEach(d => talents.push({ _id: d.id, ...d.data() }));
-    // チューレン → 本名 → ID の順でソート
-    talents.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
-    dramas = [];
-    ds.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
+    // 管理者はキャッシュをスキップ（常に最新データを使う）
+    const cachedTalents = !isAdmin ? _tLoadCache(_T_CACHE_TALENTS) : null;
+    const cachedDramas  = !isAdmin ? _tLoadCache(_T_CACHE_DRAMAS)  : null;
+
+    if (cachedTalents && cachedDramas) {
+      // 両方キャッシュヒット → Firestore読み取りゼロ
+      talents = cachedTalents;
+      dramas  = cachedDramas;
+      window._talentsDramas = dramas;
+    } else {
+      // どちらかがキャッシュミス → 必要な方だけ取得
+      const fetchTalents = cachedTalents ? Promise.resolve(null) : getDocs(collection(db, 'talents'));
+      const fetchDramas  = cachedDramas  ? Promise.resolve(null) : getDocs(collection(db, 'dramas'));
+      const [ts, ds] = await Promise.all([fetchTalents, fetchDramas]);
+
+      if (ts) {
+        talents = [];
+        ts.forEach(d => talents.push({ _id: d.id, ...d.data() }));
+        talents.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
+        _tSaveCache(_T_CACHE_TALENTS, talents);
+      } else {
+        talents = cachedTalents;
+      }
+      if (ds) {
+        dramas = [];
+        ds.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
+        window._talentsDramas = dramas;
+        _tSaveCache(_T_CACHE_DRAMAS, dramas);
+      } else {
+        dramas = cachedDramas;
+        window._talentsDramas = dramas;
+      }
+    }
   } catch(e) { talents = []; dramas = []; }
   showLoading(false);
   // 認証状態が確定していればadmin-only要素も更新
@@ -397,6 +444,7 @@ window.submitForm = async () => {
     const docId = editingId || `${nickname}_${Date.now()}`;
     await setDoc(doc(db, 'talents', docId), data, { merge: true });
     showToast(editingId ? '更新しました ✓' : '追加しました ✓');
+    try { sessionStorage.removeItem(_T_CACHE_TALENTS); } catch(e) {}
     closeForm();
     await loadAll();
   } catch(e) {
@@ -411,6 +459,7 @@ window.deleteTalent = async id => {
   try {
     await deleteDoc(doc(db, 'talents', id));
     showToast('削除しました');
+    try { sessionStorage.removeItem(_T_CACHE_TALENTS); } catch(e) {}
     closeDetail();
     await loadAll();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
@@ -589,34 +638,52 @@ function _showTalentShareMenu(btn, t) {
     </button>`;
 
   document.body.appendChild(popup);
+  // ポップアップ自体のクリックは伝播させない
+  popup.addEventListener('click', e => e.stopPropagation());
 
-  popup.querySelector('#tsp-x').onclick = () => {
+  popup.querySelector('#tsp-x').onclick = (e) => {
+    e.stopPropagation();
     window.open('https://x.com/intent/tweet?text=' + xText, '_blank');
     popup.remove();
   };
-  popup.querySelector('#tsp-line').onclick = () => {
+  popup.querySelector('#tsp-line').onclick = (e) => {
+    e.stopPropagation();
     window.open(lineUrl, '_blank');
     popup.remove();
   };
-  popup.querySelector('#tsp-copy').onclick = () => {
+  popup.querySelector('#tsp-copy').onclick = (e) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(pageUrl).then(() => {
-      showToast('URLをコピーしました ✓');
+      window._showToastFallback('URLをコピーしました ✓', 'ok');
     }).catch(() => {
-      showToast('コピーに失敗しました', 'error');
+      // clipboard API が使えない場合のフォールバック
+      const ta = document.createElement('textarea');
+      ta.value = pageUrl;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      window._showToastFallback('URLをコピーしました ✓', 'ok');
     });
     popup.remove();
   };
 
-  setTimeout(() => document.addEventListener('click', function rm() {
-    document.getElementById('talent-share-popup')?.remove();
-    document.removeEventListener('click', rm);
-  }), 100);
+  // 外側クリックで閉じる（少し遅延してリスナー登録）
+  setTimeout(() => {
+    function closePopup(e) {
+      if (!popup.contains(e.target)) {
+        popup.remove();
+        document.removeEventListener('click', closePopup);
+      }
+    }
+    document.addEventListener('click', closePopup);
+  }, 150);
 }
 
 // ── マイリスト画像作成（talents.htmlから直接開く） ──────────────────────
 window.openTalentShareImgModal = function() {
-  if (!currentUser) {
-    showToast('ログインが必要です', 'warn');
+  if (!window._talentsCurrentUser) {
+    window._showToastFallback('ログインが必要です', 'warn');
     return;
   }
   // 毎回ユーザーデータをリフレッシュ
@@ -624,41 +691,48 @@ window.openTalentShareImgModal = function() {
 
   _ensureTalentShareData().then(() => {
     const modal = document.getElementById('talentShareImgModal');
-    if (!modal) return;
+    if (!modal) { window._showToastFallback('エラーが発生しました', 'error'); return; }
     modal.classList.add('open');
-    // フィルター選択肢を生成
     const allDramas = window._talentShareDramas || [];
     const years = [...new Set(allDramas.map(d => {
       const y = d.year ? String(d.year) : '';
-      if (!y || y === '9999' || !d.release_start || d.release_start === '未定') return '未定';
+      if (!y || y === '9999' || !d.release_start || d.release_start === '未定') return null;
       return y;
-    }).filter(y => y !== '未定'))].sort((a,b) => b - a);
+    }).filter(Boolean))].sort((a,b) => b - a);
     const studios = [...new Set(allDramas.map(d=>d.studio||'').filter(Boolean))].sort();
     const ySel = document.getElementById('tsig-year');
     const sSel = document.getElementById('tsig-studio');
     if (ySel) ySel.innerHTML = '<option value="">すべて</option>' + years.map(y=>`<option value="${y}">${y}年</option>`).join('');
     if (sSel) sSel.innerHTML = '<option value="">すべて</option>' + studios.map(s=>`<option value="${s}">${s}</option>`).join('');
     _updateTsigCount();
+  }).catch(() => {
+    window._showToastFallback('データの取得に失敗しました', 'error');
   });
 };
 
 async function _ensureTalentShareData() {
-  // dramas は loadAll() で既に読み込み済み
-  window._talentShareDramas = dramas;
-  // ユーザーデータをFirestoreから取得（まだなければ）
+  // dramas・db・currentUser は module script から window 経由で参照
+  const _db          = window._talentsDb;
+  const _getDoc      = window._firestoreGetDoc;
+  const _doc         = window._firestoreDoc;
+  const _currentUser = window._talentsCurrentUser;
+  const _dramas      = window._talentsDramas || [];
+
+  window._talentShareDramas = _dramas;
+
   if (!window._talentShareUserDoc || !window._talentShareUserDoc._loaded) {
     try {
-      if (currentUser) {
-        const snap = await getDoc(doc(db, 'users', currentUser.uid));
+      if (_currentUser && _db && _getDoc && _doc) {
+        const snap = await _getDoc(_doc(_db, 'users', _currentUser.uid));
         window._talentShareUserDoc = snap.exists() ? snap.data() : { dramas: {} };
         if (!window._talentShareUserDoc.dramas) window._talentShareUserDoc.dramas = {};
-        window._talentShareUserDoc._loaded = true;
       } else {
-        window._talentShareUserDoc = { dramas: {}, _loaded: true };
+        window._talentShareUserDoc = { dramas: {} };
       }
     } catch(e) {
-      window._talentShareUserDoc = { dramas: {}, _loaded: true };
+      window._talentShareUserDoc = { dramas: {} };
     }
+    window._talentShareUserDoc._loaded = true;
   }
 }
 

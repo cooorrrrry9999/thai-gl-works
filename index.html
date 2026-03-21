@@ -210,7 +210,40 @@ async function saveUserDoc() {
 }
 
 // ── DRAMA DATA ─────────────────────────────────────────────────────────
+// ── キャッシュ定数 ────────────────────────────────────────────────────
+const CACHE_KEY_DRAMAS  = 'glguide_dramas_v1';
+const CACHE_KEY_TALENTS = 'glguide_talents_v1';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10分キャッシュ
+
+function _saveCache(key, data) {
+  try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+}
+function _loadCache(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL_MS) { sessionStorage.removeItem(key); return null; }
+    return data;
+  } catch(e) { return null; }
+}
+
 async function loadDramasFromDB() {
+  // キャッシュがあれば使う（管理者はキャッシュをスキップして常に最新を取得）
+  if (!isAdmin) {
+    const cached = _loadCache(CACHE_KEY_DRAMAS);
+    if (cached && cached.length > 0) {
+      localDramas = cached;
+      window._localDramas = cached;
+      render();
+      const _pid = new URLSearchParams(location.search).get('drama');
+      if (_pid && document.getElementById('ov') && !document.getElementById('ov').classList.contains('open')) {
+        openM(_pid);
+        history.replaceState(null, '', location.pathname);
+      }
+      return;
+    }
+  }
   try {
     const snap = await getDocs(collection(db, 'dramas'));
     if (!snap.empty) {
@@ -218,7 +251,8 @@ async function loadDramasFromDB() {
       snap.forEach(d => arr.push({ _id: d.id, ...d.data() }));
       arr.sort((a,b) => (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1);
       localDramas = arr;
-      window._localDramas = arr; // 画像作成機能で使用
+      window._localDramas = arr;
+      _saveCache(CACHE_KEY_DRAMAS, arr);
     } else {
       localDramas = [];
     }
@@ -226,11 +260,9 @@ async function loadDramasFromDB() {
     localDramas = [];
   }
   render();
-  // ?drama=ID でアクセスした場合：全件ロード完了後にモーダルを開く
   const _pid = new URLSearchParams(location.search).get('drama');
   if (_pid && document.getElementById('ov') && !document.getElementById('ov').classList.contains('open')) {
     openM(_pid);
-    // URLをクリーンに（ブラウザ履歴を汚さない）
     history.replaceState(null, '', location.pathname);
   }
 }
@@ -254,11 +286,19 @@ async function preloadDramaModal(dramaId) {
 // ── TALENT DATA（CP選択肢 & 詳細モーダルリンク用） ─────────────────────
 let localTalents = [];
 async function loadTalentsFromDB() {
+  if (!isAdmin) {
+    const cached = _loadCache(CACHE_KEY_TALENTS);
+    if (cached && cached.length > 0) {
+      localTalents = cached;
+      return;
+    }
+  }
   try {
     const snap = await getDocs(collection(db, 'talents'));
     localTalents = [];
     snap.forEach(d => localTalents.push({ _id: d.id, ...d.data() }));
     localTalents.sort((a,b) => (a.nickname||'').localeCompare(b.nickname||''));
+    _saveCache(CACHE_KEY_TALENTS, localTalents);
   } catch(e) { localTalents = []; }
 }
 
@@ -875,6 +915,8 @@ window.submitAdminForm = async () => {
       await setDoc(doc(db,'dramas', Date.now().toString()), data);
       showToast('追加しました ✓');
     }
+    // 管理者更新時はキャッシュをクリア（一般ユーザーが古いデータを見ないように）
+    try { sessionStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
     closeAdminModal();
     await loadDramasFromDB();
   } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }
@@ -888,6 +930,7 @@ window.deleteDrama = async (id, e) => {
   try {
     await deleteDoc(doc(db,'dramas',id));
     showToast('削除しました');
+    try { sessionStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
     closeMD();
     await loadDramasFromDB();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }
@@ -1226,10 +1269,13 @@ function go() {
   }
   if (FILTER_YEAR.length > 0) {
     l = l.filter(d => {
-      const y = d.year ? String(d.year) : '未定';
-      const isUndef = !d.release_start || d.release_start === '未定' || d.release_start === '？' || d.release_start === '?';
-      const effectiveYear = (y === '9999' || y === '' || !d.year) ? '未定' : y;
-      return FILTER_YEAR.some(v => v === effectiveYear || (v === '未定' && isUndef));
+      // release_startが空・未定・?のいずれかなら「未定」
+      const rs = d.release_start || '';
+      const hasNoDate = !rs || rs === '未定' || rs === '？' || rs === '?';
+      // yearフィールドも検証（数値・文字列・未設定すべて対応）
+      const y = d.year !== undefined && d.year !== null ? String(d.year) : '';
+      const effectiveYear = hasNoDate || !y || y === '' || y === '9999' || y === 'undefined' ? '未定' : y;
+      return FILTER_YEAR.some(v => v === effectiveYear);
     });
   }
 

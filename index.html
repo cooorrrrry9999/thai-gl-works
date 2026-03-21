@@ -3430,17 +3430,15 @@ window.sbNav = function(key) {
     const user = window._currentUser;
     if (user) {
       window._CARD_MODE_SET?.('mylist');
-      window._F_SET?.('a'); // F==='w'廃止：CARD_MODE='mylist'で絞り込む
+      window._F_SET?.('a');
       window._S_SET?.('myrate');
-      window._FILTER_RESET?.(); // 前画面のフィルターをリセット
+      // フィルターを完全リセット（resetAllFilters経由で変数・チェックボックス・ラベルを一括処理）
+      window.resetAllFilters?.();
       O = 'desc';
       const srtEl = document.getElementById('srt');
       if (srtEl) srtEl.value = 'myrate';
       const oBtn = document.getElementById('srt-order');
       if (oBtn) { oBtn.textContent='↓'; oBtn.style.color='var(--muted)'; oBtn.style.borderColor='rgba(155,126,200,.25)'; }
-      // フィルターのチェックボックスもリセット
-      document.querySelectorAll('.multi-dropdown input[type=checkbox]').forEach(el => el.checked = false);
-      window.buildFilterDropdowns?.();
       window.render?.();
     } else {
       showToast('マイリストを使うにはログインが必要です', 'warn');

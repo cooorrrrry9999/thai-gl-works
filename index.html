@@ -459,22 +459,21 @@ window.saveUserMemo = async (id) => {
 };
 
 async function updateDramaAvgRate(dramaId, oldRate, newRate, isNew) {
-  // Firestoreの作品ドキュメントにuser_rate_avg / user_rate_countを保存
-  const dramaRef = doc(db, 'dramas', String(dramaId));
+  // localDramasから直接計算（Firestore読み取りゼロ）
+  const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
+  if (!d) return;
   try {
-    const snap = await getDoc(dramaRef);
-    if (!snap.exists()) return;
-    const data = snap.data();
-    let count = data.user_rate_count || 0;
-    let total = (data.user_rate_avg || 0) * count;
+    let count = d.user_rate_count || 0;
+    let total = (d.user_rate_avg || 0) * count;
     if (isNew) { total += newRate; count++; }
     else { total = total - oldRate + newRate; }
     const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
-    await updateDoc(dramaRef, { user_rate_avg: avg, user_rate_count: count });
-    // localDramasも更新
-    const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
-    if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
-  } catch(e) { /* Firestoreにないデータはスキップ */ }
+    await updateDoc(doc(db, 'dramas', String(dramaId)), { user_rate_avg: avg, user_rate_count: count });
+    // localDramasとキャッシュも更新
+    d.user_rate_avg = avg;
+    d.user_rate_count = count;
+    _saveCache(CACHE_KEY_DRAMAS, localDramas);
+  } catch(e) { /* スキップ */ }
 }
 
 // ── ADMIN: DRAMA CRUD ──────────────────────────────────────────────────

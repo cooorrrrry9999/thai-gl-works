@@ -209,9 +209,8 @@ onAuthStateChanged(auth, async user => {
 });
 
 async function loadUserDoc(uid) {
-  // ユーザーデータもキャッシュ（短め30分）
   const USER_KEY = 'glguide_user_' + uid;
-  const USER_TTL = 30 * 60 * 1000;
+  const USER_TTL = 60 * 60 * 1000; // 1時間
   try {
     const raw = localStorage.getItem(USER_KEY);
     if (raw) {
@@ -244,10 +243,23 @@ async function saveUserDoc() {
 const CACHE_KEY_DRAMAS   = 'glguide_dramas_v2';
 const CACHE_KEY_TALENTS  = 'glguide_talents_v2';
 const CACHE_KEY_SETTINGS = 'glguide_settings_v2';
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6時間キャッシュ（localStorageで永続）
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24時間キャッシュ
 
 function _saveCache(key, data) {
-  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+  try {
+    const json = JSON.stringify({ ts: Date.now(), data });
+    // 2MB超の場合は保存スキップ（localStorage容量保護）
+    if (json.length > 2 * 1024 * 1024) return;
+    localStorage.setItem(key, json);
+  } catch(e) {
+    // 容量超過の場合は古いキャッシュをクリアして再試行
+    try {
+      ['glguide_dramas_v2','glguide_talents_v2','glguide_settings_v2'].forEach(k => {
+        if (k !== key) localStorage.removeItem(k);
+      });
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+    } catch(e2) {}
+  }
 }
 function _loadCache(key) {
   try {
@@ -279,10 +291,10 @@ function _loadCacheObj(key) {
 }
 
 async function loadDramasFromDB() {
-  // キャッシュがあれば使う（管理者はキャッシュをスキップして常に最新を取得）
   if (!isAdmin) {
     const cached = _loadCache(CACHE_KEY_DRAMAS);
     if (cached && cached.length > 0) {
+      console.log('[Cache HIT] dramas:', cached.length, '件');
       localDramas = cached;
       window._localDramas = cached;
       render();
@@ -294,6 +306,7 @@ async function loadDramasFromDB() {
       return;
     }
   }
+  console.log('[Cache MISS] dramas → Firestore読み取り発生');
   try {
     const snap = await getDocs(collection(db, 'dramas'));
     if (!snap.empty) {
@@ -317,17 +330,30 @@ async function loadDramasFromDB() {
   }
 }
 
-// ?drama=ID のとき：1件だけ先行取得してモーダルを即座に開く（スマホ高速化）
+// ?drama=ID のとき：キャッシュから先行表示、なければFirestoreから1件取得
 async function preloadDramaModal(dramaId) {
   try {
-    // ドラマデータとタレントデータを並行取得
+    // まずキャッシュ済みのlocalDramasから探す
+    const cached = _loadCache(CACHE_KEY_DRAMAS);
+    if (cached && cached.length > 0) {
+      localDramas = cached;
+      window._localDramas = cached;
+      if (localTalents.length === 0) {
+        const cachedT = _loadCache(CACHE_KEY_TALENTS);
+        if (cachedT) localTalents = cachedT;
+        else await loadTalentsFromDB();
+      }
+      openM(dramaId);
+      history.replaceState(null, '', location.pathname);
+      return;
+    }
+    // キャッシュなし → Firestoreから1件だけ先行取得
     const [snap] = await Promise.all([
       getDoc(doc(db, 'dramas', dramaId)),
       localTalents.length === 0 ? loadTalentsFromDB() : Promise.resolve()
     ]);
     if (!snap.exists()) return;
     const d = { _id: snap.id, ...snap.data() };
-    // localDramasにまだなければ先行追加
     if (!localDramas.find(x => x._id === dramaId)) localDramas.unshift(d);
     openM(dramaId);
     history.replaceState(null, '', location.pathname);

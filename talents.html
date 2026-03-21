@@ -64,10 +64,21 @@ window._talentsList = [];
 // ── キャッシュ定数（index.htmlと共通キーを使用） ─────────────────────
 const _T_CACHE_DRAMAS  = 'glguide_dramas_v2';
 const _T_CACHE_TALENTS = 'glguide_talents_v2';
-const _T_CACHE_TTL = 6 * 60 * 60 * 1000; // 6時間（localStorage で永続）
+const _T_CACHE_TTL = 24 * 60 * 60 * 1000; // 24時間（localStorage で永続）
 
 function _tSaveCache(key, data) {
-  try { localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })); } catch(e) {}
+  try {
+    const json = JSON.stringify({ ts: Date.now(), data });
+    if (json.length > 2 * 1024 * 1024) return;
+    localStorage.setItem(key, json);
+  } catch(e) {
+    try {
+      ['glguide_dramas_v2','glguide_talents_v2'].forEach(k => {
+        if (k !== key) localStorage.removeItem(k);
+      });
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+    } catch(e2) {}
+  }
 }
 function _tLoadCache(key) {
   try {

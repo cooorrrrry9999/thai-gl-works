@@ -440,13 +440,14 @@ window.saveUserStatus = async (id, status) => {
 window.saveUserRate = async (id, rate) => {
   if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
   const key = String(id);
-  // saveUserDocの前にprevRateを取得（上書き前の値）
+  // 1〜5に強制制限（0は未評価）
+  const clampedRate = Math.min(5, Math.max(0, parseInt(rate) || 0));
   const prevRate = userDoc.dramas?.[key]?.rate || 0;
   const isNew = prevRate === 0;
   if (!userDoc.dramas[key]) userDoc.dramas[key] = {};
-  userDoc.dramas[key].rate = parseInt(rate) || 0;
+  userDoc.dramas[key].rate = clampedRate;
   await saveUserDoc();
-  await updateDramaAvgRate(id, prevRate, parseInt(rate)||0, isNew);
+  await updateDramaAvgRate(id, prevRate, clampedRate, isNew);
   renderModal(id);
   showToast('評価を保存しました ✓');
 };
@@ -1118,7 +1119,7 @@ window.recalcAllAvgRates = async () => {
       const data = userDoc.data();
       if (!data.dramas) return;
       Object.entries(data.dramas).forEach(([dramaId, d]) => {
-        const rate = parseInt(d.rate) || 0;
+        const rate = Math.min(5, Math.max(1, parseInt(d.rate) || 0));
         if (rate <= 0) return; // 未評価はスキップ
         if (!rateMap[dramaId]) rateMap[dramaId] = { total: 0, count: 0 };
         rateMap[dramaId].total += rate;

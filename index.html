@@ -1115,17 +1115,20 @@ window.recalcAllAvgRates = async () => {
 
     // dramaId → { totalRate, count } の集計マップを作成
     const rateMap = {};
-    usersSnap.forEach(userDoc => {
-      const data = userDoc.data();
+    let userCount = 0;
+    usersSnap.forEach(userSnap => {
+      const data = userSnap.data();
+      userCount++;
       if (!data.dramas) return;
       Object.entries(data.dramas).forEach(([dramaId, d]) => {
-        const rate = Math.min(5, Math.max(1, parseInt(d.rate) || 0));
-        if (rate <= 0) return; // 未評価はスキップ
+        const rate = parseInt(d.rate) || 0;
+        if (rate <= 0 || rate > 5) return; // 未評価・異常値はスキップ
         if (!rateMap[dramaId]) rateMap[dramaId] = { total: 0, count: 0 };
         rateMap[dramaId].total += rate;
         rateMap[dramaId].count++;
       });
     });
+    console.log('[recalc] ユーザー数:', userCount, '/ Love_Design:', rateMap['Love_Design']);
 
     // Firestoreに一括書き込み（500件ずつbatch）
     // 存在するdramaのIDのみに絞る

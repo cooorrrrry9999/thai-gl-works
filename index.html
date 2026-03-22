@@ -11,7 +11,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, deleteDoc,
-         collection, getDocs, serverTimestamp, updateDoc, increment, writeBatch }
+         collection, getDocs, serverTimestamp, updateDoc, increment, writeBatch, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -102,13 +102,17 @@ async function loadSettings() {
       if (d.paid)      PAID_OPTIONS     = d.paid;
       if (d.relation)  RELATION_OPTIONS = d.relation;
 
-      // dramas_verチェック：管理者が作品を更新していたらキャッシュを破棄
-      const remoteVer = d.dramas_ver || '0';
-      const localVer  = localStorage.getItem('glguide_dramas_ver') || '0';
-      if (remoteVer !== localVer) {
+      // dramas_verチェック：localVerが存在していてremoteVerと異なる場合のみキャッシュ破棄
+      const remoteVer = d.dramas_ver || '';
+      const localVer  = localStorage.getItem('glguide_dramas_ver');
+      if (remoteVer && localVer && remoteVer !== localVer) {
+        // 管理者が更新した → キャッシュを破棄
         localStorage.removeItem(CACHE_KEY_DRAMAS);
-        localStorage.setItem('glguide_dramas_ver', remoteVer);
         console.log('[Cache INVALIDATED] dramas更新を検知 → 再取得します');
+      }
+      // バージョンを保存（初回 or 更新後）
+      if (remoteVer) {
+        localStorage.setItem('glguide_dramas_ver', remoteVer);
       }
     }
   } catch(e) { /* デフォルト値を使用 */ }
@@ -456,19 +460,27 @@ window.saveUserMemo = async (id) => {
 };
 
 async function updateDramaAvgRate(dramaId, oldRate, newRate, isNew) {
-  // localDramasから直接計算（Firestore読み取りゼロ）
-  const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
-  if (!d) return;
+  const dramaRef = doc(db, 'dramas', String(dramaId));
   try {
-    let count = d.user_rate_count || 0;
-    let total = (d.user_rate_avg || 0) * count;
-    if (isNew) { total += newRate; count++; }
-    else { total = total - oldRate + newRate; }
-    const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
-    await updateDoc(doc(db, 'dramas', String(dramaId)), { user_rate_avg: avg, user_rate_count: count });
-    // localDramasとキャッシュも更新
-    d.user_rate_avg = avg;
-    d.user_rate_count = count;
+    // トランザクションで競合を防ぐ（複数ユーザーが同時に評価しても正確に集計）
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(dramaRef);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      let count = data.user_rate_count || 0;
+      let total = Math.round((data.user_rate_avg || 0) * count * 10) / 10;
+      if (isNew) {
+        total += newRate;
+        count++;
+      } else {
+        total = total - oldRate + newRate;
+      }
+      const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
+      transaction.update(dramaRef, { user_rate_avg: avg, user_rate_count: count });
+      // localDramasとキャッシュも更新
+      const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
+      if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
+    });
     _saveCache(CACHE_KEY_DRAMAS, localDramas);
   } catch(e) { /* スキップ */ }
 }

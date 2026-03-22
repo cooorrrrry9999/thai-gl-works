@@ -1128,7 +1128,9 @@ window.recalcAllAvgRates = async () => {
     });
 
     // Firestoreに一括書き込み（500件ずつbatch）
-    const dramaIds = Object.keys(rateMap);
+    // 存在するdramaのIDのみに絞る
+    const validDramaIds = new Set(localDramas.map(d => String(d._id || d.title)));
+    const dramaIds = Object.keys(rateMap).filter(id => validDramaIds.has(id));
     let updated = 0;
     const BATCH_SIZE = 500;
     for (let i = 0; i < dramaIds.length; i += BATCH_SIZE) {
@@ -1141,7 +1143,6 @@ window.recalcAllAvgRates = async () => {
           user_rate_avg: avg,
           user_rate_count: count,
         });
-        // localDramasも更新
         const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
         if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
         updated++;

@@ -93,33 +93,33 @@ function _loadCacheObj(key) {
 async function loadSettings() {
   const SETTINGS_CACHE_KEY = 'glguide_settings_v2';
 
-  // キャッシュチェック
+  // キャッシュチェック（TTLのみで判定）
   try {
     const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
     if (raw) {
       const { ts, data } = JSON.parse(raw);
-      // キャッシュが24時間以内かつsettings_verが一致する場合はキャッシュ使用
-      const localSettingsVer = localStorage.getItem('glguide_settings_ver') || '';
-      const localDramasVer   = localStorage.getItem('glguide_dramas_ver') || '';
       if (Date.now() - ts < CACHE_TTL_MS && data) {
-        // settings_verとdramas_verはFirestoreで確認が必要なため
-        // キャッシュのverと一致しているか確認
-        if (data.settings_ver === localSettingsVer && data.dramas_ver === localDramasVer) {
-          // 完全キャッシュHIT → Firestore読み取りゼロ
-          if (data.platforms) PLATFORM_OPTIONS = data.platforms;
-          if (data.vpn)       VPN_OPTIONS      = data.vpn;
-          if (data.subtitles) SUBTITLE_OPTIONS = data.subtitles;
-          if (data.cut)       CUT_OPTIONS      = data.cut;
-          if (data.paid)      PAID_OPTIONS     = data.paid;
-          if (data.relation)  RELATION_OPTIONS = data.relation;
-          console.log('[Cache HIT] settings');
-          return;
+        if (data.platforms) PLATFORM_OPTIONS = data.platforms;
+        if (data.vpn)       VPN_OPTIONS      = data.vpn;
+        if (data.subtitles) SUBTITLE_OPTIONS = data.subtitles;
+        if (data.cut)       CUT_OPTIONS      = data.cut;
+        if (data.paid)      PAID_OPTIONS     = data.paid;
+        if (data.relation)  RELATION_OPTIONS = data.relation;
+        // dramas_verもキャッシュから確認
+        const localDramasVer = localStorage.getItem('glguide_dramas_ver') || '';
+        const cachedDramasVer = data.dramas_ver || '';
+        if (cachedDramasVer && localDramasVer && cachedDramasVer !== localDramasVer) {
+          localStorage.removeItem(CACHE_KEY_DRAMAS);
+          console.log('[Cache INVALIDATED] dramas更新を検知');
+          localStorage.setItem('glguide_dramas_ver', cachedDramasVer);
         }
+        console.log('[Cache HIT] settings');
+        return;
       }
     }
   } catch(e) {}
 
-  // キャッシュミス or バージョン不一致 → Firestoreから取得
+  // キャッシュミス → Firestoreから取得
   try {
     const snap = await getDoc(doc(db, 'settings', 'options'));
     if (snap.exists()) {
@@ -131,7 +131,7 @@ async function loadSettings() {
       if (d.paid)      PAID_OPTIONS     = d.paid;
       if (d.relation)  RELATION_OPTIONS = d.relation;
 
-      // dramas_verチェック：キャッシュ破棄が必要か確認
+      // dramas_verチェック
       const remoteVer = d.dramas_ver || '';
       const localVer  = localStorage.getItem('glguide_dramas_ver');
       if (remoteVer && localVer && remoteVer !== localVer) {
@@ -140,13 +140,9 @@ async function loadSettings() {
       }
       if (remoteVer) localStorage.setItem('glguide_dramas_ver', remoteVer);
 
-      // settings_verを保存
-      const remoteSettingsVer = d.settings_ver || '';
-      if (remoteSettingsVer) localStorage.setItem('glguide_settings_ver', remoteSettingsVer);
-
       // settingsをキャッシュに保存
       try {
-        localStorage.setItem('glguide_settings_v2', JSON.stringify({ ts: Date.now(), data: d }));
+        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: d }));
       } catch(e) {}
 
       console.log('[Cache MISS] settings → Firestore読み取り発生');

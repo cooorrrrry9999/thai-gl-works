@@ -91,17 +91,6 @@ function _loadCacheObj(key) {
 
 // ── 設定データをFirestoreから読み込む ─────────────────────────────────
 async function loadSettings() {
-  // キャッシュがあれば使う
-  const cached = _loadCacheObj(CACHE_KEY_SETTINGS);
-  if (cached) {
-    if (cached.platforms) PLATFORM_OPTIONS = cached.platforms;
-    if (cached.vpn)       VPN_OPTIONS      = cached.vpn;
-    if (cached.subtitles) SUBTITLE_OPTIONS = cached.subtitles;
-    if (cached.cut)       CUT_OPTIONS      = cached.cut;
-    if (cached.paid)      PAID_OPTIONS     = cached.paid;
-    if (cached.relation)  RELATION_OPTIONS = cached.relation;
-    return;
-  }
   try {
     const snap = await getDoc(doc(db, 'settings', 'options'));
     if (snap.exists()) {
@@ -112,7 +101,15 @@ async function loadSettings() {
       if (d.cut)       CUT_OPTIONS      = d.cut;
       if (d.paid)      PAID_OPTIONS     = d.paid;
       if (d.relation)  RELATION_OPTIONS = d.relation;
-      _saveCacheObj(CACHE_KEY_SETTINGS, d);
+
+      // dramas_verチェック：管理者が作品を更新していたらキャッシュを破棄
+      const remoteVer = d.dramas_ver || '0';
+      const localVer  = localStorage.getItem('glguide_dramas_ver') || '0';
+      if (remoteVer !== localVer) {
+        localStorage.removeItem(CACHE_KEY_DRAMAS);
+        localStorage.setItem('glguide_dramas_ver', remoteVer);
+        console.log('[Cache INVALIDATED] dramas更新を検知 → 再取得します');
+      }
     }
   } catch(e) { /* デフォルト値を使用 */ }
 }
@@ -291,19 +288,6 @@ async function saveUserDoc() {
 
 async function loadDramasFromDB() {
   if (!isAdmin) {
-    // バージョンチェック：管理者が更新した場合はキャッシュを破棄
-    try {
-      const localVer  = localStorage.getItem('glguide_dramas_ver') || '0';
-      const verSnap   = await getDoc(doc(db, 'settings', 'cache_version'));
-      const remoteVer = verSnap.exists() ? (verSnap.data().dramas_ver || '0') : '0';
-      if (remoteVer > localVer) {
-        // リモートの方が新しい → キャッシュを破棄して再取得
-        localStorage.removeItem(CACHE_KEY_DRAMAS);
-        localStorage.setItem('glguide_dramas_ver', remoteVer);
-        console.log('[Cache INVALIDATED] 新しいデータがあります');
-      }
-    } catch(e) { /* バージョンチェック失敗は無視 */ }
-
     const cached = _loadCache(CACHE_KEY_DRAMAS);
     if (cached && cached.length > 0) {
       console.log('[Cache HIT] dramas:', cached.length, '件');
@@ -1002,13 +986,12 @@ window.submitAdminForm = async () => {
       await setDoc(doc(db,'dramas', Date.now().toString()), data);
       showToast('追加しました ✓');
     }
-    // キャッシュをクリア＋更新タイムスタンプを記録（他端末のキャッシュ無効化）
+    // キャッシュクリア＋settings/optionsにバージョンを書き込む（他端末のキャッシュ無効化）
     const newVer = Date.now().toString();
     try {
       localStorage.removeItem(CACHE_KEY_DRAMAS);
       localStorage.setItem('glguide_dramas_ver', newVer);
-      // Firestoreにもバージョンを書き込む（他端末が参照できるよう）
-      await setDoc(doc(db, 'settings', 'cache_version'), { dramas_ver: newVer }, { merge: true });
+      await setDoc(doc(db, 'settings', 'options'), { dramas_ver: newVer }, { merge: true });
     } catch(e) {}
     closeAdminModal();
     await loadDramasFromDB();
@@ -1023,7 +1006,12 @@ window.deleteDrama = async (id, e) => {
   try {
     await deleteDoc(doc(db,'dramas',id));
     showToast('削除しました');
-    try { localStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
+    const newVer = Date.now().toString();
+    try {
+      localStorage.removeItem(CACHE_KEY_DRAMAS);
+      localStorage.setItem('glguide_dramas_ver', newVer);
+      await setDoc(doc(db, 'settings', 'options'), { dramas_ver: newVer }, { merge: true });
+    } catch(e) {}
     closeMD();
     await loadDramasFromDB();
   } catch(e) { showToast('削除エラー: ' + e.message, 'error'); }

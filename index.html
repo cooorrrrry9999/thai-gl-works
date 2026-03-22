@@ -440,12 +440,13 @@ window.saveUserStatus = async (id, status) => {
 window.saveUserRate = async (id, rate) => {
   if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
   const key = String(id);
-  const prev = userDoc.dramas[key]?.rate || 0;
+  // saveUserDocの前にprevRateを取得（上書き前の値）
+  const prevRate = userDoc.dramas?.[key]?.rate || 0;
+  const isNew = prevRate === 0;
   if (!userDoc.dramas[key]) userDoc.dramas[key] = {};
   userDoc.dramas[key].rate = parseInt(rate) || 0;
   await saveUserDoc();
-  // Firestoreの作品ドキュメントに平均値を更新
-  await updateDramaAvgRate(id, prev, parseInt(rate)||0, !prev);
+  await updateDramaAvgRate(id, prevRate, parseInt(rate)||0, isNew);
   renderModal(id);
   showToast('評価を保存しました ✓');
 };
@@ -459,10 +460,10 @@ window.saveUserMemo = async (id) => {
   showToast('メモを保存しました ✓');
 };
 
-async function updateDramaAvgRate(dramaId, oldRate, newRate, isNew) {
+async function updateDramaAvgRate(dramaId, prevRate, newRate, isNew) {
+  // トランザクションでFirestoreの最新値を読んで正確に計算
   const dramaRef = doc(db, 'dramas', String(dramaId));
   try {
-    // トランザクションで競合を防ぐ（複数ユーザーが同時に評価しても正確に集計）
     await runTransaction(db, async (transaction) => {
       const snap = await transaction.get(dramaRef);
       if (!snap.exists()) return;
@@ -470,19 +471,24 @@ async function updateDramaAvgRate(dramaId, oldRate, newRate, isNew) {
       let count = data.user_rate_count || 0;
       let total = Math.round((data.user_rate_avg || 0) * count * 10) / 10;
       if (isNew) {
+        // 初めての評価 → countを増やす
         total += newRate;
         count++;
+      } else if (newRate === 0) {
+        // 評価を削除 → countを減らす
+        total -= prevRate;
+        count = Math.max(0, count - 1);
       } else {
-        total = total - oldRate + newRate;
+        // 評価を変更 → countはそのまま、totalだけ差分更新
+        total = total - prevRate + newRate;
       }
       const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
       transaction.update(dramaRef, { user_rate_avg: avg, user_rate_count: count });
-      // localDramasとキャッシュも更新
       const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
       if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
     });
     _saveCache(CACHE_KEY_DRAMAS, localDramas);
-  } catch(e) { /* スキップ */ }
+  } catch(e) { console.error('updateDramaAvgRate error:', e); }
 }
 
 // ── ADMIN: DRAMA CRUD ──────────────────────────────────────────────────
@@ -1094,6 +1100,77 @@ window.bulkLinkTalents = async () => {
 };
 
 // データ移行スクリプトは削除済み（Firestoreに移行完了）
+
+// ── 平均評価の全作品再計算（管理者専用） ────────────────────────────────
+window.recalcAllAvgRates = async () => {
+  if (!isAdmin) return;
+  if (!confirm('全ユーザーの評価データを読み込んで、全作品の平均評価を再計算します。\nよろしいですか？')) return;
+
+  showToast('再計算中...しばらくお待ちください', 'ok');
+
+  try {
+    // 全usersドキュメントを取得
+    const usersSnap = await getDocs(collection(db, 'users'));
+
+    // dramaId → { totalRate, count } の集計マップを作成
+    const rateMap = {};
+    usersSnap.forEach(userDoc => {
+      const data = userDoc.data();
+      if (!data.dramas) return;
+      Object.entries(data.dramas).forEach(([dramaId, d]) => {
+        const rate = parseInt(d.rate) || 0;
+        if (rate <= 0) return; // 未評価はスキップ
+        if (!rateMap[dramaId]) rateMap[dramaId] = { total: 0, count: 0 };
+        rateMap[dramaId].total += rate;
+        rateMap[dramaId].count++;
+      });
+    });
+
+    // Firestoreに一括書き込み（500件ずつbatch）
+    const dramaIds = Object.keys(rateMap);
+    let updated = 0;
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < dramaIds.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      const chunk = dramaIds.slice(i, i + BATCH_SIZE);
+      chunk.forEach(dramaId => {
+        const { total, count } = rateMap[dramaId];
+        const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
+        batch.update(doc(db, 'dramas', String(dramaId)), {
+          user_rate_avg: avg,
+          user_rate_count: count,
+        });
+        // localDramasも更新
+        const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
+        if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
+        updated++;
+      });
+      await batch.commit();
+    }
+
+    // 評価がない作品はavg/countを0にリセット
+    const noRateIds = localDramas
+      .map(d => String(d._id||d.title))
+      .filter(id => !rateMap[id] && (localDramas.find(x=>String(x._id||x.title)===id)?.user_rate_count > 0));
+    if (noRateIds.length > 0) {
+      const batch2 = writeBatch(db);
+      noRateIds.forEach(id => {
+        batch2.update(doc(db, 'dramas', id), { user_rate_avg: 0, user_rate_count: 0 });
+        const d = localDramas.find(x => String(x._id||x.title) === id);
+        if (d) { d.user_rate_avg = 0; d.user_rate_count = 0; }
+      });
+      await batch2.commit();
+    }
+
+    // キャッシュを更新
+    _saveCache(CACHE_KEY_DRAMAS, localDramas);
+    render();
+    showToast(`✓ ${updated}作品の平均評価を再計算しました`);
+
+  } catch(e) {
+    showToast('エラー: ' + e.message, 'error');
+  }
+};
 
 // ── module → 通常script へのブリッジ ─────────────────────────────────
 // 通常scriptから呼べるようwindowに登録
@@ -3013,6 +3090,10 @@ textarea:focus{border-color:var(--lav);}
       <button class="sb-item admin-only" style="display:none" onclick="bulkLinkTalents()">
         <span class="sb-icon si-gold">🔗</span>
         <span>talent_id 一括紐付け</span>
+      </button>
+      <button class="sb-item admin-only" style="display:none" onclick="recalcAllAvgRates()">
+        <span class="sb-icon si-gold">⭐</span>
+        <span>平均評価を再計算</span>
       </button>
       <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
         <span class="sb-icon si-gold">⬆</span>

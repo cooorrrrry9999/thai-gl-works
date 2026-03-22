@@ -291,6 +291,19 @@ async function saveUserDoc() {
 
 async function loadDramasFromDB() {
   if (!isAdmin) {
+    // バージョンチェック：管理者が更新した場合はキャッシュを破棄
+    try {
+      const localVer  = localStorage.getItem('glguide_dramas_ver') || '0';
+      const verSnap   = await getDoc(doc(db, 'settings', 'cache_version'));
+      const remoteVer = verSnap.exists() ? (verSnap.data().dramas_ver || '0') : '0';
+      if (remoteVer > localVer) {
+        // リモートの方が新しい → キャッシュを破棄して再取得
+        localStorage.removeItem(CACHE_KEY_DRAMAS);
+        localStorage.setItem('glguide_dramas_ver', remoteVer);
+        console.log('[Cache INVALIDATED] 新しいデータがあります');
+      }
+    } catch(e) { /* バージョンチェック失敗は無視 */ }
+
     const cached = _loadCache(CACHE_KEY_DRAMAS);
     if (cached && cached.length > 0) {
       console.log('[Cache HIT] dramas:', cached.length, '件');
@@ -989,8 +1002,14 @@ window.submitAdminForm = async () => {
       await setDoc(doc(db,'dramas', Date.now().toString()), data);
       showToast('追加しました ✓');
     }
-    // 管理者更新時はキャッシュをクリア（一般ユーザーが古いデータを見ないように）
-    try { localStorage.removeItem(CACHE_KEY_DRAMAS); } catch(e) {}
+    // キャッシュをクリア＋更新タイムスタンプを記録（他端末のキャッシュ無効化）
+    const newVer = Date.now().toString();
+    try {
+      localStorage.removeItem(CACHE_KEY_DRAMAS);
+      localStorage.setItem('glguide_dramas_ver', newVer);
+      // Firestoreにもバージョンを書き込む（他端末が参照できるよう）
+      await setDoc(doc(db, 'settings', 'cache_version'), { dramas_ver: newVer }, { merge: true });
+    } catch(e) {}
     closeAdminModal();
     await loadDramasFromDB();
   } catch(e) { showToast('保存エラー: ' + e.message, 'error'); }

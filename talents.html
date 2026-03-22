@@ -139,11 +139,19 @@ async function loadAll() {
     el.style.display = isAdmin ? '' : 'none';
   });
   render();
+  // index.htmlからのタレントリンク経由（sessionStorage）
   const openId = sessionStorage.getItem('openTalent');
   if (openId) {
     sessionStorage.removeItem('openTalent');
     const t = talents.find(x => x._id === openId);
     if (t) setTimeout(() => openDetail(openId), 100);
+  }
+  // ?talent=ID でのダイレクトアクセス（共有リンク）
+  const urlTalentId = new URLSearchParams(location.search).get('talent');
+  if (urlTalentId) {
+    const t = talents.find(x => x._id === urlTalentId);
+    if (t) setTimeout(() => openDetail(urlTalentId), 100);
+    history.replaceState(null, '', location.pathname);
   }
 }
 loadAll();
@@ -330,11 +338,15 @@ window.openDetail = id => {
   // 共有ボタンにIDをセット
   const sw = document.getElementById('detailShareWrap');
   if (sw) sw.dataset.talentId = id;
+  // URLにタレントIDを付与（ブラウザ履歴は汚さない）
+  history.replaceState(null, '', location.pathname + '?talent=' + encodeURIComponent(id));
 };
 
 window.closeDetail = () => {
   document.getElementById('detailOverlay').classList.remove('open');
   document.body.style.overflow = '';
+  // URLをクリーンに戻す
+  history.replaceState(null, '', location.pathname);
 };
 
 window.goToDrama = id => {
@@ -610,7 +622,9 @@ window.shareTalentCard = function(id, e) {
 };
 
 function _showTalentShareMenu(btn, t) {
-  const pageUrl = location.origin + location.pathname;
+  // タレントID付きのディープリンクを生成
+  const pageUrl = location.origin + location.pathname + '?talent=' + encodeURIComponent(t._id);
+  const shareText = (t.nickname || '') + ' | Cory\'s GL Guide';
 
   const existing = document.getElementById('talent-share-popup');
   if (existing) { existing.remove(); return; }
@@ -626,7 +640,7 @@ function _showTalentShareMenu(btn, t) {
   popup.style.top = top + 'px';
   popup.style.left = left + 'px';
 
-  const xText = encodeURIComponent((t.nickname || '') + ' | Cory\'s GL Guide ' + pageUrl);
+  const xText = encodeURIComponent(shareText + ' ' + pageUrl);
   const lineUrl = 'https://social-plugins.line.me/lineit/share?url=' + encodeURIComponent(pageUrl);
 
   popup.innerHTML = `

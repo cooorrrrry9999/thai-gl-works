@@ -1575,6 +1575,7 @@ function go() {
     if(S==='new') { const r=(a.sort_date||'9999')<(b.sort_date||'9999')?1:-1; return r*asc; }
     if(S==='old') { const r=(a.sort_date||'9999')>(b.sort_date||'9999')?1:-1; return r*asc; }
     if(S==='urate')  return ((b.user_rate_avg||0) - (a.user_rate_avg||0)) * asc;
+    if(S==='ucount') return ((b.user_rate_count||0) - (a.user_rate_count||0)) * asc;
     if(S==='myrate') {
       const ua = userDoc.dramas?.[String(a._id||a.title)]?.rate || 0;
       const ub = userDoc.dramas?.[String(b._id||b.title)]?.rate || 0;
@@ -3282,6 +3283,7 @@ textarea:focus{border-color:var(--lav);}
       <select id="srt">
         <option value="new">放送日</option>
         <option value="urate" selected>みんなの評価</option>
+        <option value="ucount">評価件数</option>
         <option value="myrate">自分の評価</option>
         <option value="rec">Coryのおすすめ</option>
         <option value="short">作品時間</option>

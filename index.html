@@ -1575,7 +1575,14 @@ function go() {
     if(S==='new') { const r=(a.sort_date||'9999')<(b.sort_date||'9999')?1:-1; return r*asc; }
     if(S==='old') { const r=(a.sort_date||'9999')>(b.sort_date||'9999')?1:-1; return r*asc; }
     if(S==='urate')  return ((b.user_rate_avg||0) - (a.user_rate_avg||0)) * asc;
-    if(S==='ucount') return ((b.user_rate_count||0) - (a.user_rate_count||0)) * asc;
+    if(S==='ucount') {
+      const ac = a.user_rate_count || 0;
+      const bc = b.user_rate_count || 0;
+      if (ac === 0 && bc === 0) return 0;
+      if (ac === 0) return 1;   // 0件は常に下へ
+      if (bc === 0) return -1;  // 0件は常に下へ
+      return (bc - ac) * asc;
+    }
     if(S==='myrate') {
       const ua = userDoc.dramas?.[String(a._id||a.title)]?.rate || 0;
       const ub = userDoc.dramas?.[String(b._id||b.title)]?.rate || 0;

@@ -44,7 +44,7 @@ const WATCH_STATUS   = ['未視聴','視聴中','視聴済み','Drop out'];
 const CACHE_KEY_DRAMAS   = 'glguide_dramas_v2';
 const CACHE_KEY_TALENTS  = 'glguide_talents_v2';
 const CACHE_KEY_SETTINGS = 'glguide_settings_v2';
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24時間
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7日間キャッシュ
 
 function _saveCache(key, data) {
   try {
@@ -328,6 +328,7 @@ async function saveUserDoc() {
 
 async function loadDramasFromDB() {
   if (!isAdmin) {
+    // ① localStorageキャッシュチェック
     const cached = _loadCache(CACHE_KEY_DRAMAS);
     if (cached && cached.length > 0) {
       console.log('[Cache HIT] dramas:', cached.length, '件');
@@ -336,12 +337,32 @@ async function loadDramasFromDB() {
       render();
       const _pid = new URLSearchParams(location.search).get('drama');
       if (_pid && document.getElementById('ov') && !document.getElementById('ov').classList.contains('open')) {
-        openM(_pid);
-        history.replaceState(null, '', location.pathname);
+        openM(_pid); history.replaceState(null, '', location.pathname);
       }
       return;
     }
+    // ② JSONファイルから取得（Firestore読み取りゼロ・高速）
+    try {
+      const res = await fetch('/data/dramas.json?v=' + (localStorage.getItem('glguide_dramas_ver') || '0'));
+      if (res.ok) {
+        const arr = await res.json();
+        if (arr && arr.length > 0) {
+          arr.sort((a,b) => (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1);
+          localDramas = arr;
+          window._localDramas = arr;
+          _saveCache(CACHE_KEY_DRAMAS, arr);
+          console.log('[JSON HIT] dramas:', arr.length, '件');
+          render();
+          const _pid = new URLSearchParams(location.search).get('drama');
+          if (_pid && document.getElementById('ov') && !document.getElementById('ov').classList.contains('open')) {
+            openM(_pid); history.replaceState(null, '', location.pathname);
+          }
+          return;
+        }
+      }
+    } catch(e) { /* JSONなければFirestoreへ */ }
   }
+  // ③ Firestore（管理者 or JSONなし時のフォールバック）
   console.log('[Cache MISS] dramas → Firestore読み取り発生');
   try {
     const snap = await getDocs(collection(db, 'dramas'));
@@ -355,14 +376,11 @@ async function loadDramasFromDB() {
     } else {
       localDramas = [];
     }
-  } catch(e) {
-    localDramas = [];
-  }
+  } catch(e) { localDramas = []; }
   render();
   const _pid = new URLSearchParams(location.search).get('drama');
   if (_pid && document.getElementById('ov') && !document.getElementById('ov').classList.contains('open')) {
-    openM(_pid);
-    history.replaceState(null, '', location.pathname);
+    openM(_pid); history.replaceState(null, '', location.pathname);
   }
 }
 
@@ -399,12 +417,24 @@ async function preloadDramaModal(dramaId) {
 let localTalents = [];
 async function loadTalentsFromDB() {
   if (!isAdmin) {
+    // ① localStorageキャッシュ
     const cached = _loadCache(CACHE_KEY_TALENTS);
-    if (cached && cached.length > 0) {
-      localTalents = cached;
-      return;
-    }
+    if (cached && cached.length > 0) { localTalents = cached; return; }
+    // ② JSONファイル
+    try {
+      const res = await fetch('/data/talents.json?v=' + (localStorage.getItem('glguide_dramas_ver') || '0'));
+      if (res.ok) {
+        const arr = await res.json();
+        if (arr && arr.length > 0) {
+          localTalents = arr;
+          _saveCache(CACHE_KEY_TALENTS, arr);
+          console.log('[JSON HIT] talents:', arr.length, '件');
+          return;
+        }
+      }
+    } catch(e) { /* JSONなければFirestoreへ */ }
   }
+  // ③ Firestore（フォールバック）
   try {
     const snap = await getDocs(collection(db, 'talents'));
     localTalents = [];
@@ -1213,7 +1243,58 @@ window.recalcAllAvgRates = async () => {
   }
 };
 
-// ── module → 通常script へのブリッジ ─────────────────────────────────
+// ── JSONファイル書き出し（管理者専用） ───────────────────────────────────
+window.exportDataJSON = async () => {
+  if (!isAdmin) return;
+  showToast('JSONを生成中...', 'ok');
+  try {
+    // 最新データをFirestoreから取得
+    const [dramaSnap, talentSnap] = await Promise.all([
+      getDocs(collection(db, 'dramas')),
+      getDocs(collection(db, 'talents')),
+    ]);
+    const dramas = [];
+    dramaSnap.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
+    dramas.sort((a,b) => (a.sort_date||'9999') < (b.sort_date||'9999') ? 1 : -1);
+
+    const talents = [];
+    talentSnap.forEach(d => talents.push({ _id: d.id, ...d.data() }));
+    talents.sort((a,b) => (a.nickname||'').localeCompare(b.nickname||''));
+
+    // dramas.jsonをダウンロード
+    const dBlob = new Blob([JSON.stringify(dramas)], { type: 'application/json' });
+    const dA = document.createElement('a');
+    dA.href = URL.createObjectURL(dBlob);
+    dA.download = 'dramas.json';
+    dA.click();
+
+    // talents.jsonをダウンロード（少し遅延）
+    await new Promise(r => setTimeout(r, 500));
+    const tBlob = new Blob([JSON.stringify(talents)], { type: 'application/json' });
+    const tA = document.createElement('a');
+    tA.href = URL.createObjectURL(tBlob);
+    tA.download = 'talents.json';
+    tA.click();
+
+    showToast('✓ dramas.json と talents.json をダウンロードしました', 'ok');
+
+    // デプロイ手順をコンソールに表示
+    console.log(`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📥 JSONファイルのデプロイ手順：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+cd ~/Desktop/ThaiGLworks
+mkdir -p data
+cp ~/Downloads/dramas.json data/dramas.json
+cp ~/Downloads/talents.json data/talents.json
+firebase deploy --only hosting
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    `);
+    showToast('コンソールにデプロイ手順を表示しました', 'ok');
+  } catch(e) {
+    showToast('エラー: ' + e.message, 'error');
+  }
+};
 // 通常scriptから呼べるようwindowに登録
 // （render, renderFilterTags, updateFilterBtnLabel, buildFilterDropdowns）
 // render・setF・setView はすでにwindow.xxxで登録済みのものもあるが
@@ -3135,6 +3216,10 @@ textarea:focus{border-color:var(--lav);}
       <button class="sb-item admin-only" style="display:none" onclick="recalcAllAvgRates()">
         <span class="sb-icon si-gold">⭐</span>
         <span>平均評価を再計算</span>
+      </button>
+      <button class="sb-item admin-only" style="display:none" onclick="exportDataJSON()">
+        <span class="sb-icon si-gold">📥</span>
+        <span>JSONを書き出す</span>
       </button>
       <button class="sb-item admin-only" id="sb-admin-migrate" style="display:none" onclick="uploadBuiltinToFirestore()">
         <span class="sb-icon si-gold">⬆</span>

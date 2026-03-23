@@ -64,7 +64,7 @@ window._talentsList = [];
 // ── キャッシュ定数（index.htmlと共通キーを使用） ─────────────────────
 const _T_CACHE_DRAMAS  = 'glguide_dramas_v2';
 const _T_CACHE_TALENTS = 'glguide_talents_v2';
-const _T_CACHE_TTL = 24 * 60 * 60 * 1000; // 24時間（localStorage で永続）
+const _T_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7日間（localStorage で永続）
 
 function _tSaveCache(key, data) {
   try {
@@ -98,7 +98,7 @@ function _tLoadCache(key) {
 async function loadAll() {
   showLoading(true);
   try {
-    // キャッシュを試みる（管理者・キャッシュなし時はFirestoreから取得）
+    // ① localStorageキャッシュチェック
     const cachedTalents = _tLoadCache(_T_CACHE_TALENTS);
     const cachedDramas  = _tLoadCache(_T_CACHE_DRAMAS);
 
@@ -107,29 +107,55 @@ async function loadAll() {
       dramas  = cachedDramas;
       window._talentsDramas = dramas;
     } else {
-      const fetchTalents = cachedTalents ? Promise.resolve(null) : getDocs(collection(db, 'talents'));
-      const fetchDramas  = cachedDramas  ? Promise.resolve(null) : getDocs(collection(db, 'dramas'));
+      // ② JSONファイルから取得（Firestore読み取りゼロ）
+      let jsonTalents = null, jsonDramas = null;
+      if (!isAdmin) {
+        try {
+          const ver = localStorage.getItem('glguide_dramas_ver') || '0';
+          const [rt, rd] = await Promise.all([
+            cachedTalents ? Promise.resolve(null) : fetch('/data/talents.json?v=' + ver),
+            cachedDramas  ? Promise.resolve(null) : fetch('/data/dramas.json?v=' + ver),
+          ]);
+          if (rt && rt.ok) { const d = await rt.json(); if (d?.length) jsonTalents = d; }
+          if (rd && rd.ok) { const d = await rd.json(); if (d?.length) jsonDramas  = d; }
+        } catch(e) { /* JSONなければFirestoreへ */ }
+      }
+
+      // ③ Firestore（フォールバック）
+      const needTalents = !cachedTalents && !jsonTalents;
+      const needDramas  = !cachedDramas  && !jsonDramas;
+      const fetchTalents = needTalents ? getDocs(collection(db, 'talents')) : Promise.resolve(null);
+      const fetchDramas  = needDramas  ? getDocs(collection(db, 'dramas'))  : Promise.resolve(null);
       const [ts, ds] = await Promise.all([fetchTalents, fetchDramas]);
 
-      if (ts) {
+      if (jsonTalents) {
+        talents = jsonTalents;
+        talents.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
+        _tSaveCache(_T_CACHE_TALENTS, talents);
+      } else if (ts) {
         talents = [];
         ts.forEach(d => talents.push({ _id: d.id, ...d.data() }));
         talents.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
         _tSaveCache(_T_CACHE_TALENTS, talents);
       } else {
-        talents = cachedTalents;
-      }      if (ds) {
+        talents = cachedTalents || [];
+      }
+
+      if (jsonDramas) {
+        dramas = jsonDramas;
+        window._talentsDramas = dramas;
+        _tSaveCache(_T_CACHE_DRAMAS, dramas);
+      } else if (ds) {
         dramas = [];
         ds.forEach(d => dramas.push({ _id: d.id, ...d.data() }));
         window._talentsDramas = dramas;
         _tSaveCache(_T_CACHE_DRAMAS, dramas);
       } else {
-        dramas = cachedDramas;
+        dramas = cachedDramas || [];
         window._talentsDramas = dramas;
       }
     }
   } catch(e) {
-    // Firestore取得失敗時はキャッシュをクリアしてエラーを握りつぶす
     try { localStorage.removeItem(_T_CACHE_TALENTS); localStorage.removeItem(_T_CACHE_DRAMAS); } catch(e2) {}
     talents = []; dramas = [];
   }

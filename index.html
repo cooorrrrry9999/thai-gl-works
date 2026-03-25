@@ -3224,6 +3224,11 @@ textarea:focus{border-color:var(--lav);}
       <!-- その他 -->
       <div class="sb-section-label">その他</div>
 
+      <button class="sb-item" onclick="openTutorial()">
+        <span class="sb-icon si-teal">💡</span>
+        <span>使い方ガイド</span>
+      </button>
+
       <a class="sb-item" href="https://x.com/cory_fbshipper" target="_blank">
         <span class="sb-icon si-gray">𝕏</span>
         <span>X ＠cory_fbshipper</span>
@@ -4423,6 +4428,176 @@ window._exposeLocalDramas = function(dramas) { window._localDramas = dramas; };
   </div><!-- /.main-wrap -->
 </div><!-- /.page-layout -->
 <!-- [END SECTION: SIDEBAR LAYOUT] -->
+
+<!-- ── チュートリアルモーダル ──────────────────────────────────────── -->
+<div id="tutorialOverlay" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;padding:16px">
+  <div id="tutorialModal" style="background:var(--card);border:1px solid rgba(155,126,200,.3);border-radius:16px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <!-- ヘッダー -->
+    <div style="background:linear-gradient(135deg,rgba(155,126,200,.2),rgba(232,84,122,.15));padding:20px 24px 16px;position:relative">
+      <div style="font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Welcome to</div>
+      <div style="font-size:20px;font-weight:700;color:var(--text)">🐶 Cory's GL Guide</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">タイGL作品データベース — 使い方ガイド</div>
+      <button onclick="closeTutorial()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <!-- ステップインジケーター -->
+    <div style="display:flex;justify-content:center;gap:6px;padding:12px 0 0">
+      <div class="tut-dot" id="tut-dot-0" style="width:8px;height:8px;border-radius:50%;background:rgba(155,126,200,.2);transition:background .2s"></div>
+      <div class="tut-dot" id="tut-dot-1" style="width:8px;height:8px;border-radius:50%;background:rgba(155,126,200,.2);transition:background .2s"></div>
+      <div class="tut-dot" id="tut-dot-2" style="width:8px;height:8px;border-radius:50%;background:rgba(155,126,200,.2);transition:background .2s"></div>
+      <div class="tut-dot" id="tut-dot-3" style="width:8px;height:8px;border-radius:50%;background:rgba(155,126,200,.2);transition:background .2s"></div>
+    </div>
+    <!-- スライドコンテナ -->
+    <div id="tutSlides" style="padding:20px 24px 24px">
+    </div>
+    <!-- ナビゲーション -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 24px 20px">
+      <button id="tutPrevBtn" onclick="tutPrev()" style="background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.2);border-radius:8px;padding:8px 16px;color:var(--muted);cursor:pointer;font-size:13px;font-family:inherit">← 戻る</button>
+      <span id="tutPageLabel" style="font-size:11px;color:var(--muted)">1 / 4</span>
+      <button id="tutNextBtn" onclick="tutNext()" style="background:linear-gradient(135deg,var(--ll),var(--rose));border:none;border-radius:8px;padding:8px 20px;color:#fff;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">次へ →</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.tut-dot.active { background: var(--ll) !important; }
+.tut-feature { display:flex;gap:12px;align-items:flex-start;padding:12px;background:rgba(155,126,200,.05);border:1px solid rgba(155,126,200,.1);border-radius:10px;margin-bottom:10px; }
+.tut-icon { font-size:28px;flex-shrink:0;width:40px;text-align:center; }
+.tut-title { font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px; }
+.tut-desc { font-size:12px;color:var(--muted);line-height:1.6; }
+</style>
+
+<script>
+const TUT_SLIDES = [
+  {
+    title: '🎬 タイGL作品を探そう',
+    content: `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.7">
+        Cory's GL Guideは、タイのGL（Girls Love）作品を探せるデータベースサイトです。<br>
+        放送日・配信プラットフォーム・CPなどで作品を検索できます。
+      </div>
+      <div class="tut-feature">
+        <div class="tut-icon">🔍</div>
+        <div><div class="tut-title">作品を探す</div><div class="tut-desc">タイトル・CP名・あらすじキーワードで検索。放送年・配信媒体などのフィルターも使えます。</div></div>
+      </div>
+      <div class="tut-feature">
+        <div class="tut-icon">👩</div>
+        <div><div class="tut-title">タレント名鑑</div><div class="tut-desc">出演俳優の情報や出演作品一覧を確認できます。お気に入りの女優を見つけよう！</div></div>
+      </div>
+    `
+  },
+  {
+    title: '⭐ 視聴記録をつけよう',
+    content: `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.7">
+        Googleアカウントでログインすると、視聴記録や評価を保存できます。
+      </div>
+      <div class="tut-feature">
+        <div class="tut-icon">📺</div>
+        <div><div class="tut-title">視聴ステータス記録</div><div class="tut-desc">「未視聴」「視聴中」「視聴済み」「Drop out」の4段階で管理。マイリストに自動で整理されます。</div></div>
+      </div>
+      <div class="tut-feature">
+        <div class="tut-icon">⭐</div>
+        <div><div class="tut-title">★評価</div><div class="tut-desc">作品の詳細を開いて★1〜5をタップするだけ！みんなの平均評価も確認できます。</div></div>
+      </div>
+    `
+  },
+  {
+    title: '👤 マイリストを活用しよう',
+    content: `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.7">
+        ログイン後に「マイリスト」を開くと、視聴記録した作品がまとめて確認できます。
+      </div>
+      <div class="tut-feature">
+        <div class="tut-icon">📋</div>
+        <div><div class="tut-title">マイリスト</div><div class="tut-desc">視聴済み・視聴中・Drop outの作品を一覧表示。自分だけのメモも残せます。</div></div>
+      </div>
+      <div class="tut-feature">
+        <div class="tut-icon">📸</div>
+        <div><div class="tut-title">マイリストを共有</div><div class="tut-desc">視聴済み作品をカード画像にしてSNSでシェア！X（Twitter）やLINEで共有できます。</div></div>
+      </div>
+    `
+  },
+  {
+    title: '🚀 さっそく使ってみよう！',
+    content: `
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.7">
+        準備はできましたか？まずはGoogleでログインして視聴記録をつけてみましょう！
+      </div>
+      <div style="text-align:center;padding:8px 0 16px">
+        <div style="font-size:40px;margin-bottom:8px">🐶</div>
+        <div style="font-size:14px;color:var(--text);font-weight:600;margin-bottom:4px">楽しいタイGL生活を！</div>
+        <div style="font-size:12px;color:var(--muted)">気になる作品を見つけたらぜひ評価してください✨</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button onclick="loginWithGoogle();closeTutorial();" style="width:100%;padding:11px;background:linear-gradient(135deg,var(--ll),var(--rose));border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px">
+          <img src="https://www.google.com/favicon.ico" width="16" height="16" style="border-radius:2px">Googleでログインして始める
+        </button>
+        <button onclick="closeTutorial()" style="width:100%;padding:10px;background:rgba(155,126,200,.08);border:1px solid rgba(155,126,200,.2);border-radius:10px;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">
+          ログインせずに見る
+        </button>
+      </div>
+    `
+  }
+];
+
+let _tutIdx = 0;
+
+function _renderTutSlide(idx) {
+  const slide = TUT_SLIDES[idx];
+  document.getElementById('tutSlides').innerHTML = `
+    <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px">${slide.title}</div>
+    ${slide.content}
+  `;
+  // ドット更新
+  document.querySelectorAll('.tut-dot').forEach((d,i) => d.classList.toggle('active', i === idx));
+  // ページラベル
+  document.getElementById('tutPageLabel').textContent = `${idx+1} / ${TUT_SLIDES.length}`;
+  // ボタン
+  document.getElementById('tutPrevBtn').style.visibility = idx === 0 ? 'hidden' : 'visible';
+  document.getElementById('tutNextBtn').textContent = idx === TUT_SLIDES.length - 1 ? '✓ 閉じる' : '次へ →';
+}
+
+window.openTutorial = function(forceIdx = 0) {
+  _tutIdx = forceIdx;
+  const ov = document.getElementById('tutorialOverlay');
+  ov.style.display = 'flex';
+  _renderTutSlide(_tutIdx);
+  document.body.style.overflow = 'hidden';
+};
+
+window.closeTutorial = function() {
+  document.getElementById('tutorialOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+  localStorage.setItem('glguide_tutorial_done', '1');
+};
+
+window.tutNext = function() {
+  if (_tutIdx < TUT_SLIDES.length - 1) {
+    _tutIdx++;
+    _renderTutSlide(_tutIdx);
+  } else {
+    closeTutorial();
+  }
+};
+
+window.tutPrev = function() {
+  if (_tutIdx > 0) {
+    _tutIdx--;
+    _renderTutSlide(_tutIdx);
+  }
+};
+
+// オーバーレイクリックで閉じる
+document.getElementById('tutorialOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeTutorial();
+});
+
+// 初回訪問時に自動表示
+if (!localStorage.getItem('glguide_tutorial_done')) {
+  // データ読み込み後に表示（少し遅延）
+  setTimeout(() => openTutorial(), 1500);
+}
+</script>
 
 </body>
 </html>

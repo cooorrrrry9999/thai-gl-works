@@ -503,6 +503,22 @@ window.saveUserStatus = async (id, status) => {
   renderModal(id);
   showToast('ステータスを保存しました ✓');
 };
+// ── ★タップ評価UI ──────────────────────────────────────────────────────
+function _updateStarRow(id, val) {
+  const row = document.getElementById('starRateRow_' + id);
+  const label = document.getElementById('starRateLabel_' + id);
+  if (!row) return;
+  row.querySelectorAll('.star-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.val) <= val);
+  });
+  if (label) label.textContent = val > 0 ? `★${val}` : '未評価';
+}
+window.hoverStar = (id, val) => _updateStarRow(id, val);
+window.unhoverStar = (id, currentVal) => _updateStarRow(id, currentVal);
+window.tapStar = async (id, val) => {
+  await window.saveUserRate(id, val);
+};
+
 window.saveUserRate = async (id, rate) => {
   if (!currentUser) { showToast('ログインが必要です', 'warn'); return; }
   const key = String(id);
@@ -2109,13 +2125,21 @@ function renderModal(id) {
           </div>
         </div>
         <div class="uf-row">
-          <label>マイ評価 ⭐（整数）</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input type="number" id="userRateInput" min="0" max="5" step="1" value="${ud.rate||0}"
-              style="width:60px;background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.3);border-radius:6px;padding:5px 8px;color:var(--text);font-size:14px;">
-            <button class="saveNoteBtn" onclick="saveUserRate('${id}',document.getElementById('userRateInput').value)">保存</button>
+          <label>マイ評価 ⭐</label>
+          <div class="star-rate-wrap">
+            <div class="star-rate-row" id="starRateRow_${id}">
+              ${[1,2,3,4,5].map(n => `
+                <button class="star-btn${(ud.rate||0)>=n?' active':''}"
+                  onclick="tapStar('${id}',${n})"
+                  onmouseover="hoverStar('${id}',${n})"
+                  onmouseout="unhoverStar('${id}',${ud.rate||0})"
+                  data-val="${n}">★</button>
+              `).join('')}
+              <span class="star-rate-label" id="starRateLabel_${id}">${ud.rate ? `★${ud.rate}` : '未評価'}</span>
+              ${ud.rate ? `<button class="star-rate-clear" onclick="tapStar('${id}',0)">クリア</button>` : ''}
+            </div>
+            ${d.user_rate_avg ? `<div style="font-size:11px;color:var(--muted)">みんなの平均: ★${d.user_rate_avg}（${d.user_rate_count||0}件）</div>` : ''}
           </div>
-          ${d.user_rate_avg?`<div style="font-size:11px;color:var(--muted);margin-top:4px">みんなの平均: ★${d.user_rate_avg}（${d.user_rate_count||0}件）</div>`:''}
         </div>
         <div class="uf-row">
           <label>📝 メモ</label>
@@ -2439,6 +2463,15 @@ select option{background:var(--dark2);}
 /* ユーザー平均評価 */
 .user-avg-rate{margin-top:6px;font-size:11px;color:var(--ll);display:flex;align-items:center;gap:4px;}
 .urate-count{font-size:10px;color:var(--muted);}
+/* ★タップ評価UI */
+.star-rate-wrap{display:flex;flex-direction:column;gap:8px;}
+.star-rate-row{display:flex;gap:6px;align-items:center;}
+.star-btn{font-size:28px;cursor:pointer;color:rgba(212,168,67,.2);transition:color .15s,transform .15s;background:none;border:none;padding:2px;line-height:1;}
+.star-btn:hover,.star-btn.active{color:var(--gold);}
+.star-btn:hover{transform:scale(1.2);}
+.star-rate-label{font-size:12px;color:var(--muted);min-width:60px;}
+.star-rate-clear{font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;text-decoration:underline;}
+.star-rate-clear:hover{color:var(--ll);}
 /* 項目編集モーダル */
 .settings-section{margin-bottom:20px;}
 .settings-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}

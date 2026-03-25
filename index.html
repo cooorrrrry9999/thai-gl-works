@@ -449,6 +449,15 @@ _exposeToWindow();
 loadSettings().then(() => {
   loadTalentsFromDB();
   loadDramasFromDB();
+  // 週1自動再計算（管理者のみ・最終実行から7日以上経過していたら）
+  if (isAdmin) {
+    const last = parseInt(localStorage.getItem('glguide_recalc_last') || '0');
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    if (Date.now() - last > WEEK_MS) {
+      console.log('[recalc] 週次自動再計算を実行します');
+      setTimeout(() => recalcAllAvgRates(true), 3000); // 3秒後に静かに実行
+    }
+  }
 });
 
 // ── USER ACTIONS ───────────────────────────────────────────────────────
@@ -1185,11 +1194,10 @@ window.bulkLinkTalents = async () => {
 // データ移行スクリプトは削除済み（Firestoreに移行完了）
 
 // ── 平均評価の全作品再計算（管理者専用） ────────────────────────────────
-window.recalcAllAvgRates = async () => {
+window.recalcAllAvgRates = async (silent = false) => {
   if (!isAdmin) return;
-  if (!confirm('全ユーザーの評価データを読み込んで、全作品の平均評価を再計算します。\nよろしいですか？')) return;
-
-  showToast('再計算中...しばらくお待ちください', 'ok');
+  if (!silent && !confirm('全ユーザーの評価データを読み込んで、全作品の平均評価・視聴数を再計算します。\nよろしいですか？')) return;
+  if (!silent) showToast('再計算中...しばらくお待ちください', 'ok');
 
   try {
     // 全usersドキュメントを取得
@@ -1197,62 +1205,90 @@ window.recalcAllAvgRates = async () => {
 
     // dramaId → { totalRate, count } の集計マップを作成
     const rateMap = {};
+    const watchMap = {}; // 視聴ステータス集計
     let userCount = 0;
     usersSnap.forEach(userSnap => {
       const data = userSnap.data();
       userCount++;
       if (!data.dramas) return;
       Object.entries(data.dramas).forEach(([dramaId, d]) => {
+        // 評価集計
         const rate = parseInt(d.rate) || 0;
-        if (rate <= 0 || rate > 5) return; // 未評価・異常値はスキップ
-        if (!rateMap[dramaId]) rateMap[dramaId] = { total: 0, count: 0 };
-        rateMap[dramaId].total += rate;
-        rateMap[dramaId].count++;
+        if (rate > 0 && rate <= 5) {
+          if (!rateMap[dramaId]) rateMap[dramaId] = { total: 0, count: 0 };
+          rateMap[dramaId].total += rate;
+          rateMap[dramaId].count++;
+        }
+        // 視聴ステータス集計
+        const status = d.status || '';
+        if (status === '視聴済み' || status === '視聴中' || status === 'Drop out') {
+          if (!watchMap[dramaId]) watchMap[dramaId] = { watched: 0, watching: 0, drop: 0 };
+          if (status === '視聴済み') watchMap[dramaId].watched++;
+          if (status === '視聴中')   watchMap[dramaId].watching++;
+          if (status === 'Drop out') watchMap[dramaId].drop++;
+        }
       });
     });
     console.log('[recalc] ユーザー数:', userCount, '/ Love_Design:', rateMap['Love_Design']);
 
-    // Firestoreに一括書き込み（500件ずつbatch）
-    // 存在するdramaのIDのみに絞る
+    // Firestoreに一括書き込み（評価 + 視聴ステータス）
     const validDramaIds = new Set(localDramas.map(d => String(d._id || d.title)));
-    const dramaIds = Object.keys(rateMap).filter(id => validDramaIds.has(id));
+    const allTargetIds = new Set([
+      ...Object.keys(rateMap).filter(id => validDramaIds.has(id)),
+      ...Object.keys(watchMap).filter(id => validDramaIds.has(id)),
+    ]);
+    const dramaIds = [...allTargetIds];
     let updated = 0;
     const BATCH_SIZE = 500;
     for (let i = 0; i < dramaIds.length; i += BATCH_SIZE) {
       const batch = writeBatch(db);
       const chunk = dramaIds.slice(i, i + BATCH_SIZE);
       chunk.forEach(dramaId => {
-        const { total, count } = rateMap[dramaId];
-        const avg = count > 0 ? Math.round((total / count) * 10) / 10 : 0;
-        batch.update(doc(db, 'dramas', String(dramaId)), {
-          user_rate_avg: avg,
-          user_rate_count: count,
-        });
+        const rm = rateMap[dramaId];
+        const wm = watchMap[dramaId];
+        const avg = rm ? Math.round((rm.total / rm.count) * 10) / 10 : 0;
+        const updateData = {
+          user_rate_avg:          rm ? avg : 0,
+          user_rate_count:        rm ? rm.count : 0,
+          watch_count_watched:    wm ? wm.watched  : 0,
+          watch_count_watching:   wm ? wm.watching : 0,
+          watch_count_drop:       wm ? wm.drop     : 0,
+        };
+        batch.update(doc(db, 'dramas', String(dramaId)), updateData);
         const d = localDramas.find(x => String(x._id||x.title) === String(dramaId));
-        if (d) { d.user_rate_avg = avg; d.user_rate_count = count; }
+        if (d) Object.assign(d, updateData);
         updated++;
       });
       await batch.commit();
     }
 
-    // 評価がない作品はavg/countを0にリセット
-    const noRateIds = localDramas
+    // 評価も視聴もない作品は0にリセット
+    const noDataIds = localDramas
       .map(d => String(d._id||d.title))
-      .filter(id => !rateMap[id] && (localDramas.find(x=>String(x._id||x.title)===id)?.user_rate_count > 0));
-    if (noRateIds.length > 0) {
+      .filter(id => !allTargetIds.has(id) && (
+        localDramas.find(x => String(x._id||x.title) === id)?.user_rate_count > 0 ||
+        localDramas.find(x => String(x._id||x.title) === id)?.watch_count_watched > 0
+      ));
+    if (noDataIds.length > 0) {
       const batch2 = writeBatch(db);
-      noRateIds.forEach(id => {
-        batch2.update(doc(db, 'dramas', id), { user_rate_avg: 0, user_rate_count: 0 });
+      noDataIds.forEach(id => {
+        batch2.update(doc(db, 'dramas', id), {
+          user_rate_avg: 0, user_rate_count: 0,
+          watch_count_watched: 0, watch_count_watching: 0, watch_count_drop: 0,
+        });
         const d = localDramas.find(x => String(x._id||x.title) === id);
-        if (d) { d.user_rate_avg = 0; d.user_rate_count = 0; }
+        if (d) { d.user_rate_avg = 0; d.user_rate_count = 0; d.watch_count_watched = 0; d.watch_count_watching = 0; d.watch_count_drop = 0; }
       });
       await batch2.commit();
     }
 
+    // 最終実行時刻を保存（週1自動実行の基準）
+    localStorage.setItem('glguide_recalc_last', Date.now().toString());
+
     // キャッシュを更新
     _saveCache(CACHE_KEY_DRAMAS, localDramas);
     render();
-    showToast(`✓ ${updated}作品の平均評価を再計算しました`);
+    showToast(`✓ ${updated}作品の評価・視聴数を再計算しました`);
 
   } catch(e) {
     showToast('エラー: ' + e.message, 'error');
@@ -2063,6 +2099,12 @@ function renderModal(id) {
         </div>
       </div>
       ${d.user_rate_avg ? `<div class="mrate-user">👥 ユーザー平均 ★${d.user_rate_avg} <span style="font-size:10px;color:var(--muted)">(${d.user_rate_count||0}件)</span></div>` : ''}
+      ${(d.watch_count_watched||d.watch_count_watching||d.watch_count_drop) ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          ${d.watch_count_watched  ? `<span style="font-size:11px;background:rgba(92,184,133,.1);border:1px solid rgba(92,184,133,.25);border-radius:8px;padding:2px 8px;color:#7dc87d">✅ 視聴済み ${d.watch_count_watched}人</span>` : ''}
+          ${d.watch_count_watching ? `<span style="font-size:11px;background:rgba(232,84,122,.1);border:1px solid rgba(232,84,122,.25);border-radius:8px;padding:2px 8px;color:var(--rl)">▶ 視聴中 ${d.watch_count_watching}人</span>` : ''}
+          ${d.watch_count_drop     ? `<span style="font-size:11px;background:rgba(155,126,200,.1);border:1px solid rgba(155,126,200,.25);border-radius:8px;padding:2px 8px;color:var(--muted)">⏹ Drop out ${d.watch_count_drop}人</span>` : ''}
+        </div>` : ''}
     </div>`;
   }
   // 基本情報グリッド

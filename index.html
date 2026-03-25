@@ -1631,8 +1631,16 @@ function go() {
       const ac = a.user_rate_count || 0;
       const bc = b.user_rate_count || 0;
       if (ac === 0 && bc === 0) return 0;
-      if (ac === 0) return 1;   // 0件は常に下へ
-      if (bc === 0) return -1;  // 0件は常に下へ
+      if (ac === 0) return 1;
+      if (bc === 0) return -1;
+      return (bc - ac) * asc;
+    }
+    if(S==='wcount') {
+      const ac = a.watch_count_watched || 0;
+      const bc = b.watch_count_watched || 0;
+      if (ac === 0 && bc === 0) return 0;
+      if (ac === 0) return 1;   // 0人は常に下へ
+      if (bc === 0) return -1;  // 0人は常に下へ
       return (bc - ac) * asc;
     }
     if(S==='myrate') {
@@ -3371,6 +3379,7 @@ textarea:focus{border-color:var(--lav);}
         <option value="new">放送日</option>
         <option value="urate" selected>みんなの評価</option>
         <option value="ucount">評価件数</option>
+        <option value="wcount">視聴済み人数</option>
         <option value="myrate">自分の評価</option>
         <option value="rec">Coryのおすすめ</option>
         <option value="short">作品時間</option>

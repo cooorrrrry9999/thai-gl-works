@@ -1100,6 +1100,7 @@ window.submitAdminForm = async () => {
     const newVer = Date.now().toString();
     try {
       localStorage.removeItem(CACHE_KEY_DRAMAS);
+      localStorage.removeItem('glguide_settings_v2'); // settingsキャッシュもクリア（dramas_ver更新のため）
       localStorage.setItem('glguide_dramas_ver', newVer);
       await setDoc(doc(db, 'settings', 'options'), { dramas_ver: newVer }, { merge: true });
     } catch(e) {}
@@ -1119,6 +1120,7 @@ window.deleteDrama = async (id, e) => {
     const newVer = Date.now().toString();
     try {
       localStorage.removeItem(CACHE_KEY_DRAMAS);
+      localStorage.removeItem('glguide_settings_v2'); // settingsキャッシュもクリア
       localStorage.setItem('glguide_dramas_ver', newVer);
       await setDoc(doc(db, 'settings', 'options'), { dramas_ver: newVer }, { merge: true });
     } catch(e) {}
